@@ -1,0 +1,81 @@
+services:
+  db:
+    image: kartoza/postgis
+    container_name: ping_db
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ping_db
+      POSTGRES_USER: ${DB_USER}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./db_schema.sql:/docker-entrypoint-initdb.d/db_schema.sql
+    networks:
+      - ping_network
+
+  redis:
+    image: redis:7.0
+    container_name: ping_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - ping_network
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+
+  minio:
+    image: minio/minio
+    container_name: ping_minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data
+    networks:
+      - ping_network
+
+  backend:
+    build: ./backend
+    container_name: ping_backend
+    restart: always
+    environment:
+      DB_HOST: ping_db
+      DB_PORT: 5432
+      DB_NAME: ping_db
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: ping_redis
+      REDIS_PORT: 6379
+      S3_ENDPOINT: http://ping_minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      PRIVATE_KEY: ${PRIVATE_KEY}
+      PUBLIC_KEY: ${PUBLIC_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    networks:
+      - ping_network
+    volumes:
+      - ./backend:/app
+
+volumes:
+  db_data:
+  redis_data:
+  minio_data:
+
+networks:
+  ping_network:
+    driver: bridge
