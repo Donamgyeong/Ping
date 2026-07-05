@@ -13,7 +13,7 @@ CREATE TABLE files (
     uid CHAR(36) NOT NULL,
     filename VARCHAR(100) NOT NULL,
     original_filename VARCHAR(100) NOT NULL,
-    upload_date DATETIME NOT NULL,
+    upload_date TIMESTAMP NOT NULL,
     private BOOLEAN NOT NULL,
     FOREIGN KEY (uid) REFERENCES users (uid) ON DELETE CASCADE
 );
@@ -39,7 +39,7 @@ CREATE TABLE feeds (
     feed_id CHAR(36) PRIMARY KEY,
     uid CHAR(36) NOT NULL,
     content TEXT NOT NULL,
-    post_date DATETIME NOT NULL,
+    post_date TIMESTAMP NOT NULL,
     location POINT NOT NULL,
     private BOOLEAN NOT NULL,
     FOREIGN KEY (uid) REFERENCES users (uid) ON DELETE CASCADE
@@ -75,7 +75,7 @@ CREATE TABLE comments (
     feed_id CHAR(36) NOT NULL,
     writer CHAR(36) NOT NULL,
     content TEXT NOT NULL,
-    comment_date DATETIME NOT NULL,
+    comment_date TIMESTAMP NOT NULL,
     FOREIGN KEY (feed_id) REFERENCES feeds (feed_id) ON DELETE CASCADE,
     FOREIGN KEY (writer) REFERENCES users (uid) ON DELETE CASCADE
 );
@@ -84,7 +84,7 @@ create index idx_comment_feed_id on comments (feed_id);
 
 CREATE TABLE chat (
     cid CHAR(36) PRIMARY KEY,
-    manager CHAR(36),
+    creator CHAR(36),
     title VARCHAR(50) NOT NULL,
     FOREIGN KEY (creator) REFERENCES users (uid) ON DELETE SET NULL
 );
