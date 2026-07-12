@@ -3,14 +3,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from library.schema import *
 from uuid import uuid4
 from service.auth_service import hash_password
+from datetime import date
 
 
 async def create_user(
     db: AsyncSession, email: str, pwd: str, nickname: str, birthdate: date
 ) -> tuple:
     uid = str(uuid4())
-    salt = str(uuid4()).encode("utf-8")
-    hashed_pwd = hash_password(pwd, salt)
+    salt = str(uuid4())
+    hashed_pwd = hash_password(pwd, salt.encode())
 
     new_user = User(
         uid=uid, email=email, pwd=hashed_pwd, birthdate=birthdate, salt=salt

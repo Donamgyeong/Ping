@@ -1,7 +1,7 @@
 CREATE TABLE users (
     uid CHAR(36) PRIMARY KEY,
     email VARCHAR(50) NOT NULL UNIQUE,
-    pwd VARCHAR(20) NOT NULL,
+    pwd VARCHAR(255) NOT NULL,
     birthdate DATE NOT NULL,
     salt CHAR(36) NOT NULL
 );
