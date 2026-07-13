@@ -1,6 +1,6 @@
 from typing import Annotated
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from library.model import (
     FeedID,
@@ -25,6 +25,7 @@ from service.auth_service import validate_token
 from service.user_service import is_followed, get_following_list
 from datetime import datetime, timedelta, timezone
 from library.db import get_db
+import logging
 
 router = APIRouter(prefix="/feed", tags=["feed"])
 
@@ -37,14 +38,21 @@ async def new(
     feed: FeedCreate,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseID:
+    user = await validate_token(token, db)
     try:
-        user = await validate_token(token, db)
-        await create_feed(db, user.uid, feed)
-
-        return ResponseID(result="success", id="feed")
-    except Exception:
+        feed_id = await create_feed(db, user.uid, feed)
+        await db.commit()
+        return ResponseID(result="success", id=feed_id)
+    except HTTPException as e:
         await db.rollback()
-        return ResponseID(result="fail", id="")
+        raise e
+    except Exception as e:
+        await db.rollback()
+        logging.error(f"Error creating feed for user {user.uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.post("/update")
@@ -53,14 +61,21 @@ async def update(
     feed: FeedUpdate,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseBase:
+    user = await validate_token(token, db)
     try:
-        user = await validate_token(token, db)
         await update_feed(db, user.uid, feed)
-
+        await db.commit()
         return ResponseBase(result="success")
-    except Exception:
+    except HTTPException as e:
         await db.rollback()
-        return ResponseBase(result="fail")
+        raise e
+    except Exception as e:
+        await db.rollback()
+        logging.error(f"Error updating feed {feed.fid} for user {user.uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.post("/delete")
@@ -69,14 +84,21 @@ async def delete(
     fid: str,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseBase:
+    user = await validate_token(token, db)
     try:
-        user = await validate_token(token, db)
         await delete_feed(db, user.uid, fid)
-
+        await db.commit()
         return ResponseBase(result="success")
-    except Exception:
+    except HTTPException as e:
         await db.rollback()
-        return ResponseBase(result="fail")
+        raise e
+    except Exception as e:
+        await db.rollback()
+        logging.error(f"Error deleting feed {fid} for user {user.uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.get("/get/location")
@@ -87,7 +109,18 @@ async def get_feed_by_location(
     radius: float,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseFeed:
-    return ResponseFeed(result="success", feeds=[])
+    # TODO: Implement location-based feed search
+    await validate_token(token, db)
+    try:
+        return ResponseFeed(result="success", feeds=[])
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting feeds by location: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.get("/get/user/{uid}")
@@ -96,8 +129,8 @@ async def get_feed_id_by_user(
     uid: str,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseFeedID:
+    user = await validate_token(token, db)
     try:
-        user = await validate_token(token, db)
         followed = await is_followed(db, user.uid, uid)
 
         feeds = await get_feeds_by_uid(db, uid)
@@ -110,8 +143,14 @@ async def get_feed_id_by_user(
                 result.append(feedID)
 
         return ResponseFeedID(result="success", feedid=result)
-    except Exception:
-        return ResponseFeedID(result="fail", feedid=[])
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting feeds for user {uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.get("/get/{fid}")
@@ -120,13 +159,31 @@ async def get_feeds(
     fid: str,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseFeed:
+    user = await validate_token(token, db)
     try:
-        await validate_token(token, db)
         feed = await get_one_feed(db, fid)
+        if not feed:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Feed not found"
+            )
+
+        is_owner = feed.uid == user.uid
+        followed = await is_followed(db, user.uid, feed.uid)
+
+        if feed.private and not is_owner and not followed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this feed",
+            )
+
         feedItem = FeedItem.model_validate(feed)
         return ResponseFeed(result="success", feeds=[feedItem])
-    except Exception:
-        return ResponseFeed(result="fail", feeds=[])
+    except Exception as e:
+        logging.error(f"Error getting feed {fid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.get("/get/following")
@@ -134,8 +191,8 @@ async def get_following_feeds(
     token: Annotated[str, Depends(oauth2_scheme)],
     db: AsyncSession = Depends(get_db),
 ) -> ResponseFeedID:
+    user = await validate_token(token, db)
     try:
-        user = await validate_token(token, db)
         follow_list = await get_following_list(db, user.uid)
         feed_list = list[Feed]()
         for follow in follow_list:
@@ -154,5 +211,11 @@ async def get_following_feeds(
                 result.append(feedid)
 
         return ResponseFeedID(result="success", feedid=result)
-    except Exception:
-        return ResponseFeedID(result="fail", feedid=[])
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting following feeds for user {user.uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )

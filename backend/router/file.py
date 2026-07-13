@@ -8,6 +8,7 @@ from library.db import get_db
 from service.auth_service import validate_token
 from service.file_service import new_file, get_file_by_fid, delete_file_record
 from library.minio import upload_to_minio, delete_from_minio, get_from_minio
+import logging
 from datetime import datetime
 
 router = APIRouter(prefix="/file", tags=["files"])
@@ -22,21 +23,28 @@ async def upload_file(
     private: bool = Form(...),
     db: AsyncSession = Depends(get_db),
 ) -> ResponseID:
+    user = await validate_token(token, db)
     try:
-        user = await validate_token(token, db)
         file_data = await file.read()
 
         fid, internal_name = await new_file(
             db, user.uid, file.filename, private, datetime.now()
         )
 
-        upload_to_minio(internal_name, file_data, file.content_type)
+        await upload_to_minio(internal_name, file_data, file.content_type)
+
+        await db.commit()
 
         return ResponseID(result="success", id=fid)
+    except HTTPException as e:
+        await db.rollback()
+        raise e
     except Exception as e:
         await db.rollback()
+        logging.error(f"Error uploading file for user {user.uid}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
         )
 
 
@@ -46,8 +54,8 @@ async def delete_file(
     fid: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ) -> ResponseBase:
+    user = await validate_token(token, db)
     try:
-        user = await validate_token(token, db)
         file_to_delete = await get_file_by_fid(db, fid)
 
         if not file_to_delete:
@@ -61,17 +69,20 @@ async def delete_file(
                 detail="Not authorized to delete this file",
             )
 
-        delete_from_minio(file_to_delete.filename)
+        await delete_from_minio(file_to_delete.filename)
         await delete_file_record(db, fid)
+
+        await db.commit()
 
         return ResponseBase(result="success")
     except HTTPException as e:
-        await db.rollback()
         raise e
     except Exception as e:
         await db.rollback()
+        logging.error(f"Error deleting file {fid} for user {user.uid}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
         )
 
 
@@ -81,8 +92,8 @@ async def get_file(
     token: Annotated[str, Depends(oauth2_scheme)],
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
+    user = await validate_token(token, db)
     try:
-        user = await validate_token(token, db)
         file_record = await get_file_by_fid(db, fid)
 
         if not file_record:
@@ -96,7 +107,7 @@ async def get_file(
                 detail="Not authorized to access this file",
             )
 
-        file_stream = get_from_minio(file_record.filename)
+        file_stream = await get_from_minio(file_record.filename)
 
         return StreamingResponse(
             file_stream.stream(32 * 1024),
@@ -110,6 +121,8 @@ async def get_file(
     except HTTPException as e:
         raise e
     except Exception as e:
+        logging.error(f"Error getting file {fid} for user {user.uid}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
         )

@@ -49,7 +49,8 @@
         "ms-vscode-remote.remote-ssh",
         "ms-vscode-remote.remote-ssh-edit",
         "ms-vscode-remote.remote-wsl",
-        "ms-vscode.remote-explorer"
+        "ms-vscode.remote-explorer",
+        "google.geminicodeassist"
       ]
     }
   }

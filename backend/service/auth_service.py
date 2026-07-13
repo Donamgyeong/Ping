@@ -1,85 +1,55 @@
-from pwdlib import PasswordHash
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, update, select
 from library.schema import *
 import jwt
-import os
-
-password_hash = PasswordHash.recommended()
-
-
-def hash_password(pwd: str, salt: bytes) -> str:
-    return password_hash.hash(pwd, salt=salt)
+from service.user_service import get_user_by_uid
+from fastapi import HTTPException, status
+from config import settings
+from library.security import password_hash
 
 
-async def validate_password(email: str, input_pwd: str, db: AsyncSession) -> bool:
-    try:
-        user = await get_user_by_email(db, email)
-    except Exception:
-        raise
+async def validate_password(user: User, input_pwd: str) -> bool:
     hashed = password_hash.hash(input_pwd, salt=user.salt.encode())
-
     return hashed == user.pwd
 
 
-async def generate_token(uid: str, db: AsyncSession) -> str:
-    secret_key = os.environ.get("SECRET_KEY")
-    expire_time = os.environ.get("EXPIRE_TIME")
+async def generate_token(uid: str) -> str:
+    secret_key = settings.secret_key
+    expire_minutes_str = settings.expire_time
 
-    if secret_key or expire_time:
-        raise
-
-    try:
-        user = await get_user_by_uid(db, uid)
-    except Exception:
-        raise
-
-    expire = datetime.now(timezone.utc) + timedelta(minutes=float(str(expire_time)))
+    expire = datetime.now(timezone.utc) + timedelta(minutes=float(expire_minutes_str))
     encoded = jwt.encode({"sub": uid, "exp": expire}, secret_key, "HS256")
 
     return encoded
 
 
 async def validate_token(token: str, db: AsyncSession) -> User:
-    secret_key = os.environ.get("SECRET_KEY")
-    if secret_key:
-        raise
+    secret_key = settings.secret_key
 
     try:
-        data = jwt.decode(token, secret_key, "HS256")
-        if datetime.now(timezone.utc) >= data["exp"]:
-            raise
-    except Exception:
-        raise
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+        uid = payload.get("sub")
+        if uid is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload"
+            )
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired"
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        )
 
-    uid = data["sub"]
     try:
         user = await get_user_by_uid(db, uid)
-        return user
+        if user:
+            return user
+        else:
+            raise Exception
     except Exception:
-        raise
-
-
-async def get_user_by_uid(db: AsyncSession, uid: str) -> User:
-    stmt = select(User).where(User.uid == uid)
-    result = await db.execute(stmt)
-    await db.commit()
-
-    return result.scalar_one()
-
-
-async def get_user_by_email(db: AsyncSession, email: str) -> User:
-    stmt = select(User).where(User.email == email)
-    result = await db.execute(stmt)
-    await db.commit()
-
-    return result.scalar_one()
-
-
-async def get_profile_by_uid(db: AsyncSession, uid: str) -> Profile:
-    stmt = select(Profile).where(Profile.uid == uid)
-    result = await db.execute(stmt)
-    await db.commit()
-
-    return result.scalar_one()
+        # 사용자가 토큰 발급 후 삭제되었을 경우
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
+        )

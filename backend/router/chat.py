@@ -1,5 +1,5 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, WebSocket
+from fastapi import APIRouter, Depends, WebSocket, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from library.model import ResponseBase, ResponseID, ResponseChat
@@ -12,6 +12,7 @@ from service.chat_service import (
     add_participant,
 )
 from library.db import get_db
+import logging
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -25,19 +26,38 @@ async def new_chat(
     participants: list[str],
     db: AsyncSession = Depends(get_db),
 ) -> ResponseID:
+    creator = await validate_token(token, db)
     try:
-        creator = await validate_token(token, db)
-        set_user = set(participants)
-        for participant in set_user:
-            user = await get_user_by_uid(db, participant)
-            if participant == creator.uid:
-                raise
-        cid = await create_chat(db, creator.uid, title, list(set_user))
+        participant_set = set(participants)
+        if creator.uid in participant_set:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Creator cannot be in the participant list.",
+            )
+
+        # Check if all participants exist
+        for participant_uid in participant_set:
+            user = await get_user_by_uid(db, participant_uid)
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Participant with UID {participant_uid} not found.",
+                )
+
+        cid = await create_chat(db, creator.uid, title, list(participant_set))
+        await db.commit()
 
         return ResponseID(result="success", id=cid)
-    except Exception:
+    except HTTPException as e:
         await db.rollback()
-        return ResponseID(result="fail", id="")
+        raise e
+    except Exception as e:
+        await db.rollback()
+        logging.error(f"Error creating chat for user {creator.uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.post("/delete")
@@ -46,13 +66,21 @@ async def close_chat(
     cid: str,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseBase:
+    creator = await validate_token(token, db)
     try:
-        creator = await validate_token(token, db)
         await delete_chat(db, creator.uid, cid)
+        await db.commit()
         return ResponseBase(result="success")
-    except Exception:
+    except HTTPException as e:
         await db.rollback()
-        return ResponseBase(result="fail")
+        raise e
+    except Exception as e:
+        await db.rollback()
+        logging.error(f"Error deleting chat {cid} by user {creator.uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.post("/leave")
@@ -61,13 +89,21 @@ async def leave_chat(
     cid: str,
     db: AsyncSession = Depends(get_db),
 ):
+    user = await validate_token(token, db)
     try:
-        user = await validate_token(token, db)
         await remove_participant(db, user.uid, cid)
+        await db.commit()
         return ResponseBase(result="success")
-    except Exception:
+    except HTTPException as e:
         await db.rollback()
-        return ResponseBase(result="fail")
+        raise e
+    except Exception as e:
+        await db.rollback()
+        logging.error(f"Error leaving chat {cid} for user {user.uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.post("/invite")
@@ -77,15 +113,30 @@ async def invite_to_chat(
     uid: str,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseBase:
+    inviter = await validate_token(token, db)
     try:
-        user = await validate_token(token, db)
         participant = await get_user_by_uid(db, uid)
+        if not participant:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User to invite with UID {uid} not found.",
+            )
 
         await add_participant(db, participant.uid, cid)
+        await db.commit()
         return ResponseBase(result="success")
-    except Exception:
+    except HTTPException as e:
         await db.rollback()
-        return ResponseBase(result="fail")
+        raise e
+    except Exception as e:
+        await db.rollback()
+        logging.error(
+            f"Error inviting user {uid} to chat {cid} by user {inviter.uid}: {e}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.get("/get/")
@@ -94,7 +145,18 @@ async def get_chat(
     revision: str,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseChat:
-    return ResponseChat(result="success", chat=[])
+    await validate_token(token, db)
+    try:
+        # TODO: Implement chat history retrieval logic
+        return ResponseChat(result="success", chat=[])
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting chat history: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.websocket("/get")

@@ -1,6 +1,7 @@
 from minio import Minio
 from config import settings
 from io import BytesIO
+import asyncio
 
 client = Minio(
     endpoint=settings.s3_endpoint,
@@ -10,29 +11,38 @@ client = Minio(
 )
 
 
-def upload_to_minio(object_name: str, data: bytes, content_type: str):
-    found = client.bucket_exists(settings.s3_bucket)
-    if not found:
-        client.make_bucket(settings.s3_bucket)
+async def upload_to_minio(object_name: str, data: bytes, content_type: str):
+    def _upload():
+        found = client.bucket_exists(settings.s3_bucket)
+        if not found:
+            client.make_bucket(settings.s3_bucket)
 
-    client.put_object(
-        bucket_name=settings.s3_bucket,
-        object_name=object_name,
-        data=BytesIO(data),
-        length=len(data),
-        content_type=content_type,
-    )
+        client.put_object(
+            bucket_name=settings.s3_bucket,
+            object_name=object_name,
+            data=BytesIO(data),
+            length=len(data),
+            content_type=content_type,
+        )
 
-
-def delete_from_minio(object_name: str):
-    client.remove_object(
-        bucket_name=settings.s3_bucket,
-        object_name=object_name,
-    )
+    await asyncio.to_thread(_upload)
 
 
-def get_from_minio(object_name: str):
-    response = client.get_object(
-        bucket_name=settings.s3_bucket, object_name=object_name
-    )
-    return response
+async def delete_from_minio(object_name: str):
+    def _delete():
+        client.remove_object(
+            bucket_name=settings.s3_bucket,
+            object_name=object_name,
+        )
+
+    await asyncio.to_thread(_delete)
+
+
+async def get_from_minio(object_name: str):
+    def _get():
+        response = client.get_object(
+            bucket_name=settings.s3_bucket, object_name=object_name
+        )
+        return response
+
+    return await asyncio.to_thread(_get)

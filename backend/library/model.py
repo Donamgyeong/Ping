@@ -69,5 +69,10 @@ class ResponseChat(ResponseBase):
 class UserBase(BaseModel):
     email: str
     pwd: str
+
+
+class UserInfo(UserBase):
+    email: str
+    pwd: str
     nickname: str
     birthdate: date

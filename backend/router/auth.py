@@ -5,6 +5,7 @@ from library.model import Token, ResponseBase
 from sqlalchemy.ext.asyncio import AsyncSession
 from library.db import get_db
 from service.auth_service import validate_password, generate_token
+import logging
 from service.user_service import get_user_by_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -17,16 +18,34 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> Token:
     try:
-        validation = await validate_password(form_data.username, form_data.password, db)
         user = await get_user_by_email(db, form_data.username)
-        if validation:
-            token = await generate_token(user.uid, db)
-            return Token(access_token=token, token_type="bearer")
-        else:
-            raise
-    except Exception:
+        if not user:
+            logging.warning(
+                f"Login failed: User not found for email {form_data.username}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+            )
+
+        if not await validate_password(user, form_data.password):
+            logging.warning(f"Login failed: Incorrect password for user {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+            )
+
+        token = await generate_token(user.uid)
+        return Token(access_token=token, token_type="bearer")
+    except HTTPException as e:
+        await db.rollback()
+        raise e
+    except Exception as e:
+        await db.rollback()
+        logging.error(
+            f"An unexpected error occurred during login for {form_data.username}: {e}"
+        )
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
         )

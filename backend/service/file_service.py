@@ -20,7 +20,6 @@ async def new_file(
     )
 
     db.add(new)
-    await db.commit()
 
     return fid, internal_name
 
@@ -36,4 +35,3 @@ async def delete_file_record(db: AsyncSession, fid: str):
     stmt = delete(File).where(File.fid == fid)
 
     await db.execute(stmt)
-    await db.commit()
