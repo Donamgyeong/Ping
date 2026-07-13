@@ -15,7 +15,7 @@ DB_URL = (
     + settings.db_name
 )
 
-engine = create_async_engine(DB_URL, echo=True)
+engine = create_async_engine(DB_URL, echo=True, plugins=["geoalchemy2"])
 async_session = async_sessionmaker(engine, autoflush=True, autocommit=False)
 
 

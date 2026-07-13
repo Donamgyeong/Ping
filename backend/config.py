@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     s3_secret_key: str = Field(..., validation_alias="S3_SECRET_KEY")
     s3_bucket: str = Field(..., validation_alias="S3_BUCKET")
     redis_host: str = Field(..., validation_alias="REDIS_HOST")
-    redis_port: str = Field(..., validation_alias="REDIS_PORT")
+    redis_port: int = Field(..., validation_alias="REDIS_PORT")
     secret_key: str = Field(..., validation_alias="SECRET_KEY")
     expire_time: int = Field(..., validation_alias="EXPIRE_TIME")
 

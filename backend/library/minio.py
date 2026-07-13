@@ -11,7 +11,9 @@ client = Minio(
 )
 
 
-async def upload_to_minio(object_name: str, data: bytes, content_type: str):
+async def upload_to_minio(
+    object_name: str, file_stream: BytesIO, file_length: int, content_type: str
+):
     def _upload():
         found = client.bucket_exists(settings.s3_bucket)
         if not found:
@@ -20,8 +22,8 @@ async def upload_to_minio(object_name: str, data: bytes, content_type: str):
         client.put_object(
             bucket_name=settings.s3_bucket,
             object_name=object_name,
-            data=BytesIO(data),
-            length=len(data),
+            data=file_stream,
+            length=file_length,
             content_type=content_type,
         )
 

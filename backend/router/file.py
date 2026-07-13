@@ -25,13 +25,13 @@ async def upload_file(
 ) -> ResponseID:
     user = await validate_token(token, db)
     try:
-        file_data = await file.read()
-
         fid, internal_name = await new_file(
             db, user.uid, file.filename, private, datetime.now()
         )
 
-        await upload_to_minio(internal_name, file_data, file.content_type)
+        await file.seek(0)
+        file_size = file.size
+        await upload_to_minio(internal_name, file.file, file_size, file.content_type)
 
         await db.commit()
 

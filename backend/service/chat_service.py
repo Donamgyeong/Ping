@@ -1,5 +1,6 @@
 from sqlalchemy import delete, update, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import HTTPException, status
 from library.schema import *
 from uuid import uuid4
 
@@ -27,8 +28,41 @@ async def delete_chat(db: AsyncSession, uid: str, cid: str):
 
 
 async def add_participant(db: AsyncSession, participant: str, cid: str):
-    pass
+    stmt = select(ChatParticipant).where(
+        ChatParticipant.cid == cid, ChatParticipant.uid == participant
+    )
+
+    result = await db.execute(stmt)
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Participant is already in the chat.",
+        )
+
+    new_participant = ChatParticipant(cid=cid, uid=participant)
+    db.add(new_participant)
 
 
 async def remove_participant(db: AsyncSession, participant: str, cid: str):
-    pass
+    stmt1 = select(ChatParticipant).where(
+        ChatParticipant.cid == cid, ChatParticipant.uid == participant
+    )
+
+    result = await db.execute(stmt1)
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Participant not found.",
+        )
+
+    stmt2 = delete(ChatParticipant).where(
+        ChatParticipant.cid == cid, ChatParticipant.uid == participant
+    )
+    await db.execute(stmt2)
+
+
+async def get_chat_rooms_by_user(db: AsyncSession, uid: str) -> list[str]:
+    stmt = select(ChatParticipant.cid).where(ChatParticipant.uid == uid)
+    result = await db.execute(stmt)
+    cids = result.scalars().all()
+    return list(cids)

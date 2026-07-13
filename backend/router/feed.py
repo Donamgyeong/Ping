@@ -12,6 +12,7 @@ from library.model import (
     ResponseFeed,
     ResponseFeedID,
     ResponseID,
+    ResponseFIDS,
 )
 from library.schema import Feed
 from service.feed_service import (
@@ -20,6 +21,8 @@ from service.feed_service import (
     delete_feed,
     get_feeds_by_uid,
     get_one_feed,
+    get_feeds_by_position,
+    get_image_list,
 )
 from service.auth_service import validate_token
 from service.user_service import is_followed, get_following_list
@@ -104,15 +107,24 @@ async def delete(
 @router.get("/get/location")
 async def get_feed_by_location(
     token: Annotated[str, Depends(oauth2_scheme)],
-    lat: float,
     long: float,
-    radius: float,
+    lat: float,
+    radius: int,
     db: AsyncSession = Depends(get_db),
-) -> ResponseFeed:
-    # TODO: Implement location-based feed search
-    await validate_token(token, db)
+) -> ResponseFeedID:
+    user = await validate_token(token, db)
     try:
-        return ResponseFeed(result="success", feeds=[])
+        feeds = await get_feeds_by_position(db, long, lat, radius)
+        result = list[FeedID]()
+
+        following_list = await get_following_list(db, user.uid)
+        for feed in feeds:
+            if feed.uid in following_list or not feed.private:
+                feedID = FeedID(
+                    fid=feed.feed_id, uid=feed.uid, post_date=feed.post_date
+                )
+                result.append(feedID)
+        return ResponseFeedID(result="success", feedid=result)
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -154,7 +166,7 @@ async def get_feed_id_by_user(
 
 
 @router.get("/get/{fid}")
-async def get_feeds(
+async def get_feed(
     token: Annotated[str, Depends(oauth2_scheme)],
     fid: str,
     db: AsyncSession = Depends(get_db),
@@ -177,7 +189,9 @@ async def get_feeds(
             )
 
         feedItem = FeedItem.model_validate(feed)
-        return ResponseFeed(result="success", feeds=[feedItem])
+        return ResponseFeed(
+            result="success", feed=feedItem, images=await get_image_list(db, fid)
+        )
     except Exception as e:
         logging.error(f"Error getting feed {fid}: {e}")
         raise HTTPException(
@@ -215,6 +229,31 @@ async def get_following_feeds(
         raise e
     except Exception as e:
         logging.error(f"Error getting following feeds for user {user.uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.get("/get/{fid}/images")
+async def get_feed_images(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    fid: str,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseFIDS:
+    user = await validate_token(token, db)
+    try:
+        feed = await get_one_feed(db, fid)
+        if not feed:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Feed not found"
+            )
+
+        return ResponseFIDS(result="success", fids=await get_image_list(db, fid))
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting feed images for feed {fid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",

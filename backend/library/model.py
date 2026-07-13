@@ -8,9 +8,14 @@ class FeedID(BaseModel):
     post_date: datetime
 
 
+class Location(BaseModel):
+    long: float
+    lat: float
+
+
 class FeedBase(BaseModel):
     content: str
-    location: list[str]
+    location: Location
     images: list[str]
     private: bool
 
@@ -40,7 +45,8 @@ class ResponseBase(BaseModel):
 
 
 class ResponseFeed(ResponseBase):
-    feeds: list[FeedItem]
+    feed: FeedItem
+    images: list[str]
 
 
 class ResponseFeedID(ResponseBase):
@@ -55,11 +61,20 @@ class ResponseFile(ResponseBase):
     file: bytes
 
 
+class ResponseFIDS(ResponseBase):
+    fids: list[str]
+
+
 class ChatItem(BaseModel):
     cid: str
     uid: str
     message: str
     date: str
+
+
+class ChatNew(BaseModel):
+    title: str
+    participants: list[str]
 
 
 class ResponseChat(ResponseBase):
