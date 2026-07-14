@@ -71,6 +71,22 @@ services:
       - ping_network
     volumes:
       - ./backend:/app
+  
+  frontend:
+    build: ./frontend
+    container_name: ping-frontend
+    restart: always
+    environment:
+      API_URL: http://ping-backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - ping_network
+    volumes:
+      - ./frontend:/app
+
 
 volumes:
   db_data:
