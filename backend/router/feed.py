@@ -12,7 +12,7 @@ from library.model import (
     ResponseFeed,
     ResponseFeedID,
     ResponseID,
-    ResponseFIDS,
+    ResponseIDS,
 )
 from library.schema import Feed
 from service.feed_service import (
@@ -240,7 +240,7 @@ async def get_feed_images(
     token: Annotated[str, Depends(oauth2_scheme)],
     fid: str,
     db: AsyncSession = Depends(get_db),
-) -> ResponseFIDS:
+) -> ResponseIDS:
     user = await validate_token(token, db)
     try:
         feed = await get_one_feed(db, fid)
@@ -249,7 +249,7 @@ async def get_feed_images(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Feed not found"
             )
 
-        return ResponseFIDS(result="success", fids=await get_image_list(db, fid))
+        return ResponseIDS(result="success", ids=await get_image_list(db, fid))
     except HTTPException as e:
         raise e
     except Exception as e:

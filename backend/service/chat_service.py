@@ -66,3 +66,16 @@ async def get_chat_rooms_by_user(db: AsyncSession, uid: str) -> list[str]:
     result = await db.execute(stmt)
     cids = result.scalars().all()
     return list(cids)
+
+
+async def add_message(
+    db: AsyncSession, cid: str, uid: str, content: str, message_date: datetime
+) -> str:
+    mid = str(uuid4())
+    new_message = ChatMessage(
+        message_id=mid, cid=cid, sender=uid, content=content, message_date=message_date
+    )
+
+    db.add(new_message)
+
+    return mid

@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date
-from library.model import ResponseBase, UserInfo, UserBase
+from library.model import ResponseBase, UserInfo, UserBase, ResponseDetail, ResponseIDS
 from library.security import hash_password
 from service.user_service import (
     create_user,
@@ -13,11 +13,16 @@ from service.user_service import (
     update_profile,
     get_user_by_email,
     get_profile_by_uid,
+    get_user_by_uid,
     new_follow,
+    is_followed,
 )
 from service.auth_service import validate_token, validate_password
 from library.db import get_db
+from library.redis import get_redis
+from redis.asyncio import Redis
 import logging
+from datetime import date
 
 router = APIRouter(prefix="/user", tags=["user"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
@@ -153,14 +158,12 @@ async def check_email(
 ) -> ResponseBase:
     try:
         await get_user_by_email(db, email)
-        # 사용자가 존재하면 이메일이 중복됨
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
         )
     except HTTPException as e:
         raise e
     except Exception:
-        # 사용자가 존재하지 않으면 사용 가능한 이메일
         return ResponseBase(result="success")
 
 
@@ -169,18 +172,42 @@ async def follow_request(
     token: Annotated[str, Depends(oauth2_scheme)],
     follow_uid: str,
     db: AsyncSession = Depends(get_db),
-) -> ResponseBase:
+    redis: Redis = Depends(get_redis),
+) -> ResponseDetail:
     try:
-        user = await validate_token(token, db)
+        follower = await validate_token(token, db)
+        followee = await get_user_by_uid(db, follow_uid)
+
+        if not followee:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+            )
+
+        if await is_followed(db, follower.uid, follow_uid):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Already followed"
+            )
+
         profile = await get_profile_by_uid(db, follow_uid)
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
+            )
 
-        ...
+        if profile.private:
+            redis.set("follow:" + follow_uid + ":" + follower.uid, date.today().ctime())
+            return ResponseDetail(result="success", detail="Follow requested")
+        else:
+            await new_follow(db, follower.uid, follow_uid)
+            await db.commit()
+            return ResponseDetail(result="success", detail="Follow completed")
 
-        await new_follow(db, user.uid, follow_uid)
-        await db.commit()
-        return ResponseBase(result="success")
     except Exception:
-        return ResponseBase(result="fail")
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.post("/follow/accept")
@@ -188,5 +215,53 @@ async def follow_accept(
     token: Annotated[str, Depends(oauth2_scheme)],
     request_uid: str,
     db: AsyncSession = Depends(get_db),
-):
-    pass
+    redis: Redis = Depends(get_redis),
+) -> ResponseBase:
+    try:
+        user = await validate_token(token, db)
+
+        if redis.get("follow:" + request_uid + ":" + user.uid) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Follow request not found",
+            )
+        await new_follow(db, user.uid, request_uid)
+
+        redis.delete("follow:" + request_uid + ":" + user.uid)
+        await db.commit()
+
+        return ResponseBase(result="success")
+    except Exception:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.get("/follow/request/list")
+async def get_follow_request_list(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+) -> ResponseIDS:
+    try:
+        user = await validate_token(token, db)
+        ids = await redis.keys("follow:" + user.uid + ":*")
+
+        result = []
+        for id in ids:
+            if isinstance(id, bytes):
+                result.append(id.decode())
+            else:
+                result.append(id)
+
+        return ResponseIDS(
+            result="success",
+            ids=result,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )

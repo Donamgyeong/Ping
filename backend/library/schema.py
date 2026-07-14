@@ -20,16 +20,6 @@ class User(Base):
 
     __table_args__ = (Index("idx_email", "email"),)
 
-    profile: Mapped[Optional["Profile"]] = relationship(
-        "Profile", back_populates="user", cascade="all, delete-orphan"
-    )
-    files: Mapped[List["File"]] = relationship(
-        "File", back_populates="user", cascade="all, delete-orphan"
-    )
-    feeds: Mapped[List["Feed"]] = relationship(
-        "Feed", back_populates="user", cascade="all, delete-orphan"
-    )
-
 
 class File(Base):
     __tablename__ = "files"
@@ -57,8 +47,7 @@ class Profile(Base):
     profile_picture: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("files.fid", ondelete="SET NULL"), nullable=True
     )
-
-    user: Mapped["User"] = relationship("User", back_populates="profile")
+    private: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
 
 class Follow(Base):
@@ -90,14 +79,6 @@ class Feed(Base):
         Index("idx_post_date", "post_date"),
     )
 
-    user: Mapped["User"] = relationship("User", back_populates="feeds")
-    responses: Mapped[List["FeedResponse"]] = relationship(
-        "FeedResponse", back_populates="feed", cascade="all, delete-orphan"
-    )
-    comments: Mapped[List["Comment"]] = relationship(
-        "Comment", back_populates="feed", cascade="all, delete-orphan"
-    )
-
 
 class FeedImage(Base):
     __tablename__ = "feed_image"
@@ -124,8 +105,6 @@ class FeedResponse(Base):
 
     __table_args__ = (Index("idx_feed_id", "feed_id"),)
 
-    feed: Mapped["Feed"] = relationship("Feed", back_populates="responses")
-
 
 class Comment(Base):
     __tablename__ = "comments"
@@ -141,8 +120,6 @@ class Comment(Base):
     comment_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     __table_args__ = (Index("idx_comment_feed_id", "feed_id"),)
-
-    feed: Mapped["Feed"] = relationship("Feed", back_populates="comments")
 
 
 class Chat(Base):
@@ -164,3 +141,16 @@ class ChatParticipant(Base):
     uid: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.uid", ondelete="CASCADE"), primary_key=True
     )
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_message"
+    message_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    cid: Mapped[str] = mapped_column(
+        String(36), ForeignKey("chat.cid", ondelete="CASCADE"), nullable=False
+    )
+    sender: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.uid", ondelete="CASCADE"), nullable=False
+    )
+    content: Mapped[str] = mapped_column(Text)
+    message_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)

@@ -21,6 +21,7 @@ from service.chat_service import (
     remove_participant,
     add_participant,
     get_chat_rooms_by_user,
+    add_message,
 )
 from library.db import get_db
 from library.redis import get_redis
@@ -189,27 +190,50 @@ async def redis_reader(websocket: WebSocket, pubsub):
         logging.warning(f"Redis reader error: {e}")
 
 
-async def client_reader(websocket: WebSocket, user_uid: str, redis: Redis):
+async def client_reader(
+    websocket: WebSocket, user_uid: str, redis: Redis, db: AsyncSession, cids: list[str]
+):
     try:
         while True:
             data = await websocket.receive_text()
             message_data = json.loads(data)
             cid = message_data.get("cid")
             message = message_data.get("message")
+            date = datetime.now()
 
             if not cid or not message:
                 continue
 
+            if cid not in cids:
+                logging.warning(
+                    f"User {user_uid} tried to send message to unauthorized chat room {cid}"
+                )
+                continue
+
+            mid = await add_message(db, cid, user_uid, message, date)
+
             chat_item = ChatItem(
-                cid=cid, uid=user_uid, message=message, date=datetime.now().isoformat()
+                mid=mid, cid=cid, uid=user_uid, message=message, date=date
             )
 
-            # TODO: ZADD를 사용하여 cid별로 정렬된 세트에 메시지 저장 (영속성)
             await redis.publish(f"chat:{cid}", chat_item.model_dump_json())
+            await redis.expire(f"chat:{cid}", 259200)
     except WebSocketDisconnect:
         logging.info(f"Client {user_uid} disconnected.")
+        await db.commit()
     except Exception as e:
         logging.warning(f"Client reader error for {user_uid}: {e}")
+        await db.rollback()
+
+
+async def periodic_commit(db: AsyncSession, interval_seconds: int):
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            await db.commit()
+            logging.info("Periodic commit successful.")
+        except Exception as e:
+            logging.error(f"Periodic commit failed: {e}")
 
 
 @router.websocket("/ws")
@@ -219,7 +243,6 @@ async def websocket_endpoint(
     redis: Redis = Depends(get_redis),
 ):
     try:
-        # 1. 웹소켓 헤더에서 Authorization 토큰 추출
         auth_header = websocket.headers.get("Authorization")
         if not auth_header:
             raise WebSocketException(
@@ -234,10 +257,8 @@ async def websocket_endpoint(
                 reason="Invalid authentication scheme",
             )
 
-        # 2. 토큰 검증
         user = await validate_token(token, db)
     except (WebSocketException, HTTPException, ValueError) as e:
-        # 3. 인증 실패 시 연결 거부
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
@@ -249,10 +270,13 @@ async def websocket_endpoint(
         await pubsub.subscribe(*[f"chat:{cid}" for cid in cids])
 
     redis_task = asyncio.create_task(redis_reader(websocket, pubsub))
-    client_task = asyncio.create_task(client_reader(websocket, user.uid, redis))
+    client_task = asyncio.create_task(
+        client_reader(websocket, user.uid, redis, db, cids)
+    )
+    commit_task = asyncio.create_task(periodic_commit(db, 60))
 
     done, pending = await asyncio.wait(
-        [redis_task, client_task],
+        [redis_task, client_task, commit_task],
         return_when=asyncio.FIRST_COMPLETED,
     )
 

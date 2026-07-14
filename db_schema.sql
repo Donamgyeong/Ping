@@ -23,6 +23,7 @@ CREATE TABLE profiles (
     nickname VARCHAR(50) NOT NULL,
     bio TEXT,
     profile_picture CHAR(36),
+    private BOOLEAN NOT NULL,
     FOREIGN KEY (uid) REFERENCES users (uid) ON DELETE CASCADE,
     FOREIGN KEY (profile_picture) REFERENCES files (fid) ON DELETE SET NULL
 );
@@ -95,4 +96,12 @@ CREATE TABLE chat_participant (
     PRIMARY KEY (cid, uid),
     FOREIGN KEY (cid) REFERENCES chat (cid) ON DELETE CASCADE,
     FOREIGN KEY (uid) REFERENCES users (uid) ON DELETE CASCADE
+);
+
+CREATE TABLE chat_message (
+    message_id CHAR(36) PRIMARY KEY,
+    cid CHAR(36) NOT NULL REFERENCES chat (cid) ON DELETE CASCADE,
+    sender CHAR(36) NOT NULL REFERENCES users (uid) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    message_date TIMESTAMP NOT NULL
 );

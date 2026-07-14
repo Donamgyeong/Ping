@@ -1,7 +1,7 @@
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from library.model import Token, ResponseBase
+from library.model import Token
 from sqlalchemy.ext.asyncio import AsyncSession
 from library.db import get_db
 from service.auth_service import validate_password, generate_token

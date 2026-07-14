@@ -1,6 +1,6 @@
 from minio import Minio
 from config import settings
-from io import BytesIO
+from typing import BinaryIO
 import asyncio
 
 client = Minio(
@@ -12,7 +12,7 @@ client = Minio(
 
 
 async def upload_to_minio(
-    object_name: str, file_stream: BytesIO, file_length: int, content_type: str
+    object_name: str, file_stream: BinaryIO, file_length: int, content_type: str
 ):
     def _upload():
         found = client.bucket_exists(settings.s3_bucket)

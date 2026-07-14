@@ -24,6 +24,11 @@ async def upload_file(
     db: AsyncSession = Depends(get_db),
 ) -> ResponseID:
     user = await validate_token(token, db)
+    if not file.size or not file.filename or not file.content_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File is missing",
+        )
     try:
         fid, internal_name = await new_file(
             db, user.uid, file.filename, private, datetime.now()

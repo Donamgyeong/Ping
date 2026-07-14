@@ -4,6 +4,7 @@ from library.schema import *
 from uuid import uuid4
 from library.security import hash_password
 from datetime import date
+from redis.asyncio import Redis
 
 
 async def create_user(

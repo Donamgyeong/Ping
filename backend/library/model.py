@@ -44,6 +44,10 @@ class ResponseBase(BaseModel):
     result: str
 
 
+class ResponseDetail(ResponseBase):
+    detail: str
+
+
 class ResponseFeed(ResponseBase):
     feed: FeedItem
     images: list[str]
@@ -61,15 +65,16 @@ class ResponseFile(ResponseBase):
     file: bytes
 
 
-class ResponseFIDS(ResponseBase):
-    fids: list[str]
+class ResponseIDS(ResponseBase):
+    ids: list[str]
 
 
 class ChatItem(BaseModel):
+    mid: str
     cid: str
     uid: str
     message: str
-    date: str
+    date: datetime
 
 
 class ChatNew(BaseModel):
