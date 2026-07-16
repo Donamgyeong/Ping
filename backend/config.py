@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     db_password: str = Field(..., validation_alias="DB_PASSWORD")
     db_name: str = Field(..., validation_alias="DB_NAME")
     db_host: str = Field(..., validation_alias="DB_HOST")
+    db_host_test: str = Field(..., validation_alias="DB_HOST_TEST")
     db_port: str = Field(..., validation_alias="DB_PORT")
     s3_endpoint: str = Field(..., validation_alias="S3_ENDPOINT")
     s3_access_key: str = Field(..., validation_alias="S3_ACCESS_KEY")

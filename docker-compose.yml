@@ -15,6 +15,22 @@ services:
     networks:
       - ping_network
 
+  test_db:
+    image: kartoza/postgis
+    container_name: ping-db-test
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ping_db
+      POSTGRES_USER: ${DB_USER}
+    ports:
+      - "5433:5432"
+    volumes:
+      - db_data_test:/var/lib/postgresql
+      - ./db_schema.sql:/docker-entrypoint-initdb.d/db_schema.sql
+    networks:
+      - ping_network
+
   redis:
     image: redis:7.0
     container_name: ping-redis
@@ -50,6 +66,7 @@ services:
     restart: always
     environment:
       DB_HOST: ping-db
+      DB_HOST_TEST: ping-db-test
       DB_PORT: 5432
       DB_NAME: ping_db
       DB_USER: ${DB_USER}
@@ -90,6 +107,7 @@ services:
 
 volumes:
   db_data:
+  db_data_test:
   redis_data:
   minio_data:
 

@@ -108,8 +108,8 @@ async def leave_chat(
     cid: str,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await validate_token(token, db)
     try:
+        user = await validate_token(token, db)
         await remove_participant(db, user.uid, cid)
         await db.commit()
         return ResponseBase(result="success")
@@ -220,10 +220,8 @@ async def client_reader(
             await redis.expire(f"chat:{cid}", 259200)
     except WebSocketDisconnect:
         logging.info(f"Client {user_uid} disconnected.")
-        await db.commit()
     except Exception as e:
         logging.warning(f"Client reader error for {user_uid}: {e}")
-        await db.rollback()
 
 
 async def periodic_commit(db: AsyncSession, interval_seconds: int):
@@ -283,5 +281,7 @@ async def websocket_endpoint(
     for task in pending:
         task.cancel()
 
+    await db.commit()
+
     await pubsub.unsubscribe()
-    await pubsub.close()
+    await pubsub.aclose()

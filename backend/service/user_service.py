@@ -17,9 +17,11 @@ async def create_user(
     new_user = User(
         uid=uid, email=email, pwd=hashed_pwd, birthdate=birthdate, salt=salt
     )
-    new_profile = Profile(uid=uid, nickname=nickname)
+    new_profile = Profile(uid=uid, nickname=nickname, private=False)
 
     db.add(new_user)
+    await db.flush()
+
     db.add(new_profile)
 
     await db.flush()
@@ -67,7 +69,7 @@ async def get_profile_by_uid(db: AsyncSession, uid: str) -> Profile | None:
 
 
 async def new_follow(db: AsyncSession, follower_id: str, followee_id: str):
-    new = Follow(follower_uid=follower_id, followee_id=followee_id)
+    new = Follow(follower_uid=follower_id, followee_uid=followee_id)
     db.add(new)
 
 

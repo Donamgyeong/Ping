@@ -87,6 +87,12 @@ async def update_feed(db: AsyncSession, uid: str, feed: FeedUpdate):
             status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized"
         )
 
-    stmt = update(Feed).where(Feed.feed_id == feed.fid).values(**feed.model_dump())
+    location_point = from_shape(Point(feed.location.long, feed.location.lat), srid=4326)
+
+    stmt = (
+        update(Feed)
+        .where(Feed.feed_id == feed.fid)
+        .values(content=feed.content, location=location_point, private=feed.private)
+    )
 
     await db.execute(stmt)

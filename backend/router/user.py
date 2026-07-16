@@ -60,7 +60,11 @@ async def delete(
 ) -> ResponseBase:
     user = await validate_token(token, db)
     # 비밀번호 검증 로직 추가
-    if not await validate_password(user, userbase.pwd) and user.email != userbase.email:
+    if (
+        not user
+        or not await validate_password(user, userbase.pwd)
+        or user.email != userbase.email
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password",
@@ -69,9 +73,11 @@ async def delete(
         await delete_user(db, user.uid)
         await db.commit()
         return ResponseBase(result="success")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         await db.rollback()
-        logging.error(f"Error deleting user {user.uid}: {e}")
+        logging.error(f"Error deleting user: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -95,9 +101,11 @@ async def update_email(
             status_code=status.HTTP_409_CONFLICT,
             detail="This email is already in use.",
         )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         await db.rollback()
-        logging.error(f"Error updating email for user {user.uid}: {e}")
+        logging.error(f"Error updating email for user: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -122,9 +130,11 @@ async def update_password(
         await update_user(db, user.uid, email=user.email, pwd=pwd)
         await db.commit()
         return ResponseBase(result="success")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         await db.rollback()
-        logging.error(f"Error updating password for user {user.uid}: {e}")
+        logging.error(f"Error updating password for user: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -142,9 +152,11 @@ async def update_nickname(
         await update_profile(db, user.uid, nickname)
         await db.commit()
         return ResponseBase(result="success")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         await db.rollback()
-        logging.error(f"Error updating nickname for user {user.uid}: {e}")
+        logging.error(f"Error updating nickname: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -157,14 +169,21 @@ async def check_email(
     db: AsyncSession = Depends(get_db),
 ) -> ResponseBase:
     try:
-        await get_user_by_email(db, email)
+        user = await get_user_by_email(db, email)
+
+        if not user:
+            return ResponseBase(result="success")
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
         )
     except HTTPException as e:
         raise e
     except Exception:
-        return ResponseBase(result="success")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.post("/follow/request")
@@ -195,15 +214,19 @@ async def follow_request(
             )
 
         if profile.private:
-            redis.set("follow:" + follow_uid + ":" + follower.uid, date.today().ctime())
+            await redis.set(
+                "follow:" + follow_uid + ":" + follower.uid, date.today().ctime()
+            )
             return ResponseDetail(result="success", detail="Follow requested")
         else:
             await new_follow(db, follower.uid, follow_uid)
             await db.commit()
             return ResponseDetail(result="success", detail="Follow completed")
-
-    except Exception:
+    except HTTPException as e:
+        raise e
+    except Exception as e:
         await db.rollback()
+        logging.error(f"Error creating follow request: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -219,20 +242,23 @@ async def follow_accept(
 ) -> ResponseBase:
     try:
         user = await validate_token(token, db)
-
-        if redis.get("follow:" + request_uid + ":" + user.uid) is None:
+        redis_key = f"follow:{user.uid}:{request_uid}"
+        if await redis.get(redis_key) is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Follow request not found",
             )
-        await new_follow(db, user.uid, request_uid)
+        await new_follow(db, request_uid, user.uid)
 
-        redis.delete("follow:" + request_uid + ":" + user.uid)
+        await redis.delete(redis_key)
         await db.commit()
 
         return ResponseBase(result="success")
-    except Exception:
+    except HTTPException as e:
+        raise e
+    except Exception as e:
         await db.rollback()
+        logging.error(f"Error accepting follow request: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -260,7 +286,10 @@ async def get_follow_request_list(
             result="success",
             ids=result,
         )
+    except HTTPException as e:
+        raise e
     except Exception as e:
+        logging.error(f"Error creating follow request: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",

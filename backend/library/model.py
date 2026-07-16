@@ -50,7 +50,6 @@ class ResponseDetail(ResponseBase):
 
 class ResponseFeed(ResponseBase):
     feed: FeedItem
-    images: list[str]
 
 
 class ResponseFeedID(ResponseBase):

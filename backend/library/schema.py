@@ -14,7 +14,7 @@ class User(Base):
 
     uid: Mapped[str] = mapped_column(String(36), primary_key=True)
     email: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
-    pwd: Mapped[str] = mapped_column(String(20), nullable=False)
+    pwd: Mapped[str] = mapped_column(String(255), nullable=False)
     birthdate: Mapped[date] = mapped_column(Date, nullable=False)
     salt: Mapped[str] = mapped_column(String(36), nullable=False)
 
@@ -32,8 +32,6 @@ class File(Base):
     original_filename: Mapped[str] = mapped_column(String(100), nullable=False)
     upload_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     private: Mapped[bool] = mapped_column(Boolean, nullable=False)
-
-    user: Mapped["User"] = relationship("User", back_populates="files")
 
 
 class Profile(Base):

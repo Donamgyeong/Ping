@@ -13,6 +13,7 @@ from library.model import (
     ResponseFeedID,
     ResponseID,
     ResponseIDS,
+    Location,
 )
 from library.schema import Feed
 from service.feed_service import (
@@ -27,6 +28,7 @@ from service.feed_service import (
 from service.auth_service import validate_token
 from service.user_service import is_followed, get_following_list
 from datetime import datetime, timedelta, timezone
+from geoalchemy2.shape import from_shape, to_shape
 from library.db import get_db
 import logging
 
@@ -51,7 +53,7 @@ async def new(
         raise e
     except Exception as e:
         await db.rollback()
-        logging.error(f"Error creating feed for user {user.uid}: {e}")
+        logging.error(f"Error creating feed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -64,8 +66,8 @@ async def update(
     feed: FeedUpdate,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseBase:
-    user = await validate_token(token, db)
     try:
+        user = await validate_token(token, db)
         await update_feed(db, user.uid, feed)
         await db.commit()
         return ResponseBase(result="success")
@@ -188,10 +190,22 @@ async def get_feed(
                 detail="Not authorized to access this feed",
             )
 
-        feedItem = FeedItem.model_validate(feed)
-        return ResponseFeed(
-            result="success", feed=feedItem, images=await get_image_list(db, fid)
+        point = to_shape(feed.location)
+
+        image_list = await get_image_list(db, fid)
+        feedItem = FeedItem(
+            fid=feed.feed_id,
+            uid=feed.uid,
+            post_date=feed.post_date,
+            content=feed.content,
+            private=feed.private,
+            images=image_list,
+            location=Location(long=point.x, lat=point.y),
         )
+
+        return ResponseFeed(result="success", feed=feedItem)
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logging.error(f"Error getting feed {fid}: {e}")
         raise HTTPException(

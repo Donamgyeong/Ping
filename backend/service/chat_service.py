@@ -49,7 +49,7 @@ async def remove_participant(db: AsyncSession, participant: str, cid: str):
     )
 
     result = await db.execute(stmt1)
-    if result.scalar_one_or_none():
+    if not result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Participant not found.",
