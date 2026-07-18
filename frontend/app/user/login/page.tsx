@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const { login } = useAuth();
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -34,10 +36,8 @@ export default function LoginPage() {
       }
 
       const data = await response.json();
-      const expirationTime = new Date().getTime() + 30 * 60 * 1000;
-      localStorage.setItem("token", data.access_token);
-      localStorage.setItem("tokenExpiration", expirationTime.toString());
-      router.push("/");
+      await login(data.access_token);
+      router.push("/"); // Redirect after login state is updated
     } catch (err: any) {
       setError(err.message);
     }

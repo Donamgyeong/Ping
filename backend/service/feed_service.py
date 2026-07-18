@@ -1,6 +1,6 @@
 from sqlalchemy import delete, update, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from geoalchemy2 import Geometry
+from geoalchemy2 import Geometry, Geography
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
 from fastapi import HTTPException, status
@@ -60,10 +60,10 @@ async def get_feeds_by_uid(db: AsyncSession, uid: str) -> list[Feed]:
 
 
 async def get_feeds_by_position(
-    db: AsyncSession, long: float, lat: float, radius: float
+    db: AsyncSession, long: float, lat: float, radius: int
 ) -> list[Feed]:
     point = from_shape(Point(long, lat), srid=4326)
-    stmt = select(Feed).where(func.ST_DWithin(Feed.location, point, radius))
+    stmt = select(Feed).where(func.ST_DWithin(Feed.location, point, radius / 110000))
     result = await db.scalars(stmt)
 
     return list(result.all())

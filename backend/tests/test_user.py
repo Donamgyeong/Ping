@@ -299,6 +299,24 @@ async def test_follow(db_session, test_user_data, test_user_data2):
     assert response.status_code == 409
     assert response.json()["detail"] == "Already followed"
 
+    # 유저 1의 팔로잉 목록 확인
+    response = client.get("/user/following", headers=headers1)
+    assert response.status_code == 200
+    following_list = response.json()["following"]
+    assert len(following_list) == 1
+    assert following_list[0]["uid"] == user2_uid
+
+    # 유저 2의 팔로워 목록 확인
+    response = client.get(f"/user/followers?uid={user2_uid}", headers=headers1)
+    assert response.status_code == 200
+    follower_list = response.json()["following"]  # ResponseFollowing 모델 재사용
+    assert len(follower_list) == 1
+    from service.user_service import get_user_by_email
+
+    async for db in override_get_db():
+        user1 = await get_user_by_email(db, test_user_data["email"])
+        assert follower_list[0]["uid"] == user1.uid
+
 
 @pytest.mark.asyncio
 async def test_follow_private_and_accept(db_session, test_user_data, test_user_data2):

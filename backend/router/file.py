@@ -91,7 +91,7 @@ async def delete_file(
         )
 
 
-@router.get("/get")
+@router.get("/get/{fid}")
 async def get_file(
     fid: str,
     token: Annotated[str, Depends(oauth2_scheme)],

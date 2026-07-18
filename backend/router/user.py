@@ -25,6 +25,7 @@ from service.user_service import (
     get_profile_by_uid,
     get_user_by_uid,
     new_follow,
+    get_followers,
     is_followed,
     get_following,
 )
@@ -297,11 +298,13 @@ async def follow_accept(
 @router.get("/following", response_model=ResponseFollowing)
 async def get_following_list(
     token: Annotated[str, Depends(oauth2_scheme)],
+    uid: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     try:
         user = await validate_token(token, db)
-        following_list = await get_following(db, user.uid)
+        target_uid = uid if uid else user.uid
+        following_list = await get_following(db, target_uid)
         return ResponseFollowing(
             result="success",
             following=[
@@ -312,6 +315,32 @@ async def get_following_list(
         raise e
     except Exception as e:
         logging.error(f"Error getting following list: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.get("/followers", response_model=ResponseFollowing)
+async def get_followers_list(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    uid: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        user = await validate_token(token, db)
+        target_uid = uid if uid else user.uid
+        followers_list = await get_followers(db, target_uid)
+        return ResponseFollowing(
+            result="success",
+            following=[  # 모델 재사용
+                FollowerInfo(uid=f.uid, nickname=f.nickname) for f in followers_list
+            ],
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting followers list: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",

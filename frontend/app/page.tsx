@@ -1,10 +1,11 @@
 "use client";
 
 import { useAuth } from "@/hooks/useAuth";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import FeedList from "./components/FeedList";
+import FeedDetail from "./components/FeedDetail";
 
 // Updated to match the backend FeedItem schema
 interface FeedItem {
@@ -17,6 +18,7 @@ interface FeedItem {
     lat: number;
   };
   images: string[];
+  nickname?: string;
   private: boolean;
 }
 
@@ -37,6 +39,7 @@ export default function Home() {
   const [feeds, setFeeds] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFeed, setSelectedFeed] = useState<FeedItem | null>(null);
+  const mapMoveTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const API_URL = process.env.API_URL || "http://localhost:8000";
 
@@ -69,11 +72,10 @@ export default function Home() {
   useEffect(() => {
     if (isLoggedIn && location && token) {
       const fetchFeeds = async () => {
-        setLoading(true);
         setError(null);
         try {
           const feedIdsResponse = await fetch(
-            `${API_URL}/feed/get/location?lat=${location.latitude}&long=${location.longitude}&radius=5000`,
+            `${API_URL}/feed/get/location?lat=${location.latitude}&long=${location.longitude}&radius=30000`,
             {
               headers: {
                 Authorization: `Bearer ${token}`,
@@ -108,11 +110,28 @@ export default function Home() {
           const feedDetailsResponses = await Promise.all(feedDetailsPromises);
           
           const validFeeds = feedDetailsResponses
-            .filter(response => response && response.result === "success" && response.feed)
-            .map(response => response.feed);
+            .filter(response => response && response.result === "success" && response.feed);
 
-          setFeeds(validFeeds);
+          const feedsWithNicknames: FeedItem[] = [];
+          for (const feedResponse of validFeeds) {
+            const feed = feedResponse.feed;
+            try {
+              const userResponse = await fetch(`${API_URL}/user/profile/${feed.uid}`, {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              });
+              if (userResponse.ok) {
+                const userData = await userResponse.json();
+                feed.nickname = userData.nickname;
+              }
+            } catch (e) {
+              // console.error("Failed to fetch user profile", e);
+            }
+            feedsWithNicknames.push(feed);
+          }
 
+          setFeeds(feedsWithNicknames);
         } catch (err: any) {
           setError(err.message);
         } finally {
@@ -128,6 +147,27 @@ export default function Home() {
     setSelectedFeed(feed);
     setLocation({latitude: feed.location.lat, longitude: feed.location.long})
   }
+
+  const handleMapMoveEnd = useCallback((newLocation: { latitude: number; longitude: number }) => {
+    // 이전 타이머가 있다면 취소합니다.
+    if (mapMoveTimeout.current) {
+      clearTimeout(mapMoveTimeout.current);
+    }
+
+    // 500ms 후에 위치 상태를 업데이트하여 API 호출을 실행합니다. (디바운싱)
+    mapMoveTimeout.current = setTimeout(() => {
+      if (location && 
+          Math.abs(location.latitude - newLocation.latitude) < 0.001 &&
+          Math.abs(location.longitude - newLocation.longitude) < 0.001) {
+        return;
+      }
+      setLocation(newLocation);
+    }, 500);
+  }, [location]); // location을 의존성에 추가하여 최신 location 값과 비교
+
+  const handleBackToFeedList = () => {
+    setSelectedFeed(null);
+  };
 
   if (loading) {
     return <main className="flex flex-col items-center justify-center min-h-screen p-4"><p>Loading...</p></main>;
@@ -153,13 +193,16 @@ export default function Home() {
   return (
     <div className="main-layout">
       <div>
-
-        <FeedList feeds={feeds} onFeedItemClick={handleFeedItemClick} title="Nearby Pings" />
+        {selectedFeed ? (
+          <FeedDetail feed={selectedFeed} onBack={handleBackToFeedList} token={token} />
+        ) : (
+          <FeedList feeds={feeds} onFeedItemClick={handleFeedItemClick} title="Nearby Pings" />
+        )}
       </div>
       <div className="map-layout">
         {error && <p className="absolute top-4 left-4 bg-red-100 text-red-700 p-2 rounded z-10">{error}</p>}
         {location ? (
-          <Map location={location} feeds={feeds} />
+          <Map location={location} feeds={feeds} selectedFeed={selectedFeed} onMapMoveEnd={handleMapMoveEnd} />
         ) : (
           <div className="flex items-center justify-center h-full">
             <p>Getting your location...</p>

@@ -122,7 +122,7 @@ async def get_feed_by_location(
         following_list = await get_following(db, user.uid)
         following_uids = map(lambda x: x.uid, following_list)
         for feed in feeds:
-            if feed.uid in following_uids or not feed.private:
+            if feed.uid in following_uids or not feed.private or feed.uid == user.uid:
                 feedID = FeedID(
                     fid=feed.feed_id, uid=feed.uid, post_date=feed.post_date
                 )
@@ -151,7 +151,7 @@ async def get_feed_id_by_user(
         feeds = await get_feeds_by_uid(db, uid)
         result = list[FeedID]()
         for feed in feeds:
-            if followed or not feed.private:
+            if followed or not feed.private or feed.uid == user.uid:
                 feedID = FeedID(
                     fid=feed.feed_id, uid=feed.uid, post_date=feed.post_date
                 )
@@ -185,7 +185,7 @@ async def get_feed(
         is_owner = feed.uid == user.uid
         followed = await is_followed(db, user.uid, feed.uid)
 
-        if feed.private and not is_owner and not followed:
+        if feed.private and (not is_owner or not followed):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this feed",

@@ -90,3 +90,13 @@ async def get_following(db: AsyncSession, uid: str) -> list[Profile]:
     )
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+async def get_followers(db: AsyncSession, uid: str) -> list[Profile]:
+    stmt = (
+        select(Profile)
+        .join(Follow, Profile.uid == Follow.follower_uid)
+        .where(Follow.followee_uid == uid)
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())

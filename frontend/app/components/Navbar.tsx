@@ -1,34 +1,13 @@
 "use client";
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function Navbar() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { token, uid, logout } = useAuth();
+  const isLoggedIn = !!token;
   const pathname = usePathname();
-
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const tokenExpiration = localStorage.getItem('tokenExpiration');
-
-    if (token && tokenExpiration) {
-      const expirationTime = parseInt(tokenExpiration, 10);
-      if (new Date().getTime() > expirationTime) {
-        handleLogout();
-        return;
-      }
-    }
-    
-    setIsLoggedIn(!!token);
-  }); // Re-check on every render
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    setIsLoggedIn(false);
-    // Optionally, redirect to home or login page
-    window.location.href = '/';
-  };
 
   return (
     <nav className="bg-gray-900 border-b border-gray-700">
@@ -48,7 +27,7 @@ export default function Navbar() {
                 Chat
               </Link>
               {isLoggedIn && (
-                 <Link href="/user/profile" className={`text-sm ${pathname.startsWith('/user/profile') ? 'font-semibold text-white' : 'font-normal text-gray-300 hover:text-white'}`}>
+                 <Link href={`/user/profile/${uid}`} className={`text-sm ${pathname.startsWith('/user/profile') ? 'font-semibold text-white' : 'font-normal text-gray-300 hover:text-white'}`}>
                     Profile
                  </Link>
               )}
@@ -56,7 +35,7 @@ export default function Navbar() {
           </div>
           <div className="hidden md:block">
             {isLoggedIn ? (
-               <button onClick={handleLogout} className="text-sm font-medium text-blue-400 hover:text-blue-300">
+               <button onClick={logout} className="text-sm font-medium text-blue-400 hover:text-blue-300">
                 Log Out
               </button>
             ) : (
