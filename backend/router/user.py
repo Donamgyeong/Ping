@@ -4,7 +4,17 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date
-from library.model import ResponseBase, UserInfo, UserBase, ResponseDetail, ResponseIDS
+from library.model import (
+    ResponseBase,
+    UserInfo,
+    UserBase,
+    ResponseDetail,
+    ResponseIDS,
+    ResponseFollowing,
+    FollowerInfo,
+    ResponseProfile,
+    ResponseID,
+)
 from library.security import hash_password
 from service.user_service import (
     create_user,
@@ -16,6 +26,7 @@ from service.user_service import (
     get_user_by_uid,
     new_follow,
     is_followed,
+    get_following,
 )
 from service.auth_service import validate_token, validate_password
 from library.db import get_db
@@ -26,6 +37,24 @@ from datetime import date
 
 router = APIRouter(prefix="/user", tags=["user"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
+
+
+@router.get("/me")
+async def get_me(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: AsyncSession = Depends(get_db),
+) -> ResponseID:
+    try:
+        user = await validate_token(token, db)
+        return ResponseID(result="success", id=user.uid)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting me: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
 
 
 @router.post("/join")
@@ -265,6 +294,30 @@ async def follow_accept(
         )
 
 
+@router.get("/following", response_model=ResponseFollowing)
+async def get_following_list(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        user = await validate_token(token, db)
+        following_list = await get_following(db, user.uid)
+        return ResponseFollowing(
+            result="success",
+            following=[
+                FollowerInfo(uid=f.uid, nickname=f.nickname) for f in following_list
+            ],
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting following list: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
 @router.get("/follow/request/list")
 async def get_follow_request_list(
     token: Annotated[str, Depends(oauth2_scheme)],
@@ -285,6 +338,39 @@ async def get_follow_request_list(
         return ResponseIDS(
             result="success",
             ids=result,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error creating follow request: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.get("/profile/{uid}")
+async def get_profile(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    uid: str,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseProfile:
+    try:
+        user = await validate_token(token, db)
+        profile = await get_profile_by_uid(db, uid)
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Profile not found",
+            )
+
+        return ResponseProfile(
+            result="success",
+            uid=uid,
+            nickname=profile.nickname,
+            bio=profile.bio,
+            profile_picture=profile.profile_picture,
+            private=profile.private,
         )
     except HTTPException as e:
         raise e

@@ -68,7 +68,9 @@ class Feed(Base):
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     post_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    location: Mapped[Geometry] = mapped_column(Geometry("POINT"), nullable=False)
+    location: Mapped[Geometry] = mapped_column(
+        Geometry("POINT", srid=4326), nullable=False
+    )
     private: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
     __table_args__ = (

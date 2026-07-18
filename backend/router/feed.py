@@ -26,7 +26,7 @@ from service.feed_service import (
     get_image_list,
 )
 from service.auth_service import validate_token
-from service.user_service import is_followed, get_following_list
+from service.user_service import is_followed, get_following
 from datetime import datetime, timedelta, timezone
 from geoalchemy2.shape import from_shape, to_shape
 from library.db import get_db
@@ -119,9 +119,10 @@ async def get_feed_by_location(
         feeds = await get_feeds_by_position(db, long, lat, radius)
         result = list[FeedID]()
 
-        following_list = await get_following_list(db, user.uid)
+        following_list = await get_following(db, user.uid)
+        following_uids = map(lambda x: x.uid, following_list)
         for feed in feeds:
-            if feed.uid in following_list or not feed.private:
+            if feed.uid in following_uids or not feed.private:
                 feedID = FeedID(
                     fid=feed.feed_id, uid=feed.uid, post_date=feed.post_date
                 )
@@ -221,10 +222,10 @@ async def get_following_feeds(
 ) -> ResponseFeedID:
     user = await validate_token(token, db)
     try:
-        follow_list = await get_following_list(db, user.uid)
+        follow_list = await get_following(db, user.uid)
         feed_list = list[Feed]()
         for follow in follow_list:
-            feeds = await get_feeds_by_uid(db, follow)
+            feeds = await get_feeds_by_uid(db, follow.uid)
             feed_list.extend(feeds)
 
         feeds = sorted(feed_list, key=lambda x: x.post_date, reverse=True)

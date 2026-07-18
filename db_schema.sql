@@ -41,14 +41,14 @@ CREATE TABLE feeds (
     uid CHAR(36) NOT NULL,
     content TEXT NOT NULL,
     post_date TIMESTAMP NOT NULL,
-    location POINT NOT NULL,
+    location GEOMETRY (Point, 4326) NOT NULL,
     private BOOLEAN NOT NULL,
     FOREIGN KEY (uid) REFERENCES users (uid) ON DELETE CASCADE
 );
 
 create index idx_uid on feeds (uid);
 
-create index idx_location on feeds (location);
+CREATE INDEX idx_feeds_location ON feeds USING gist (location);
 
 create index idx_post_date on feeds (post_date);
 

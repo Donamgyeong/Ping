@@ -1,65 +1,171 @@
-import Image from "next/image";
+"use client";
+
+import { useAuth } from "@/hooks/useAuth";
+import { useState, useEffect } from "react";
+import dynamic from 'next/dynamic';
+import Link from 'next/link';
+import FeedList from "./components/FeedList";
+
+// Updated to match the backend FeedItem schema
+interface FeedItem {
+  fid: string;
+  uid: string;
+  content: string;
+  post_date: string;
+  location: {
+    long: number;
+    lat: number;
+  };
+  images: string[];
+  private: boolean;
+}
+
+// Dynamically import the Map component
+const Map = dynamic(() => import('./components/Map'), { 
+  ssr: false,
+  loading: () => <p>Loading map...</p> 
+});
 
 export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+  const { token } = useAuth();
+  const isLoggedIn = !!token;
+  const [location, setLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [feeds, setFeeds] = useState<FeedItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedFeed, setSelectedFeed] = useState<FeedItem | null>(null);
+
+  const API_URL = process.env.API_URL || "http://localhost:8000";
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            setLocation({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            });
+            setError(null);
+            setLoading(false);
+          },
+          (error) => {
+            setError("Please enable location services to see nearby pings.");
+            setLoading(false);
+          }
+        );
+      } else {
+        setError("Geolocation is not supported by this browser.");
+        setLoading(false);
+      }
+    } else {
+        setLoading(false);
+    }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (isLoggedIn && location && token) {
+      const fetchFeeds = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const feedIdsResponse = await fetch(
+            `${API_URL}/feed/get/location?lat=${location.latitude}&long=${location.longitude}&radius=5000`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+
+          if (!feedIdsResponse.ok) {
+            throw new Error(`Failed to fetch feed IDs: ${feedIdsResponse.statusText}`);
+          }
+
+          const feedIdsData = await feedIdsResponse.json();
+          
+          if (feedIdsData.result !== "success" || !feedIdsData.feedid) {
+            setFeeds([]);
+            return;
+          }
+
+          const feedDetailsPromises = feedIdsData.feedid.map((feedIdObj: {fid: string}) =>
+            fetch(`${API_URL}/feed/get/${feedIdObj.fid}`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }).then((res) => {
+              if (!res.ok) {
+                return null;
+              }
+              return res.json();
+            })
+          );
+
+          const feedDetailsResponses = await Promise.all(feedDetailsPromises);
+          
+          const validFeeds = feedDetailsResponses
+            .filter(response => response && response.result === "success" && response.feed)
+            .map(response => response.feed);
+
+          setFeeds(validFeeds);
+
+        } catch (err: any) {
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      fetchFeeds();
+    }
+  }, [isLoggedIn, location, token, API_URL]);
+  
+  const handleFeedItemClick = (feed: FeedItem) => {
+    setSelectedFeed(feed);
+    setLocation({latitude: feed.location.lat, longitude: feed.location.long})
+  }
+
+  if (loading) {
+    return <main className="flex flex-col items-center justify-center min-h-screen p-4"><p>Loading...</p></main>;
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <main className="flex flex-col items-center justify-center min-h-screen p-4">
+        <h1 className="text-4xl font-bold mb-8">Welcome to Ping</h1>
+        <p className="text-xl mb-8">Connect with people around you.</p>
+        <div className="flex gap-4">
+          <Link href="/user/login" className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">
+            Log In
+          </Link>
+          <Link href="/user/join" className="px-6 py-2 bg-green-500 text-white rounded-md hover:bg-green-600">
+            Sign Up
+          </Link>
         </div>
       </main>
+    );
+  }
+
+  return (
+    <div className="main-layout">
+      <div>
+
+        <FeedList feeds={feeds} onFeedItemClick={handleFeedItemClick} title="Nearby Pings" />
+      </div>
+      <div className="map-layout">
+        {error && <p className="absolute top-4 left-4 bg-red-100 text-red-700 p-2 rounded z-10">{error}</p>}
+        {location ? (
+          <Map location={location} feeds={feeds} />
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <p>Getting your location...</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

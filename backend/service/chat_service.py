@@ -61,11 +61,18 @@ async def remove_participant(db: AsyncSession, participant: str, cid: str):
     await db.execute(stmt2)
 
 
-async def get_chat_rooms_by_user(db: AsyncSession, uid: str) -> list[str]:
+async def get_chatrooms_by_user(db: AsyncSession, uid: str) -> list[str]:
     stmt = select(ChatParticipant.cid).where(ChatParticipant.uid == uid)
     result = await db.execute(stmt)
     cids = result.scalars().all()
     return list(cids)
+
+
+async def get_chatroom_info(db: AsyncSession, cids: list[str]) -> list[Chat]:
+    stmt = select(Chat).where(Chat.cid.in_(cids))
+    result = await db.execute(stmt)
+
+    return list(result.scalars().all())
 
 
 async def add_message(

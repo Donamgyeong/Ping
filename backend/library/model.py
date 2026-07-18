@@ -81,8 +81,25 @@ class ChatNew(BaseModel):
     participants: list[str]
 
 
+class Chatroom(BaseModel):
+    cid: str
+    title: str
+
+
 class ResponseChat(ResponseBase):
     chat: list[ChatItem]
+
+
+class ResponseChatroom(ResponseBase):
+    chatrooms: list[Chatroom]
+
+
+class ResponseProfile(ResponseBase):
+    uid: str
+    nickname: str
+    bio: str | None
+    profile_picture: str | None
+    private: bool
 
 
 class UserBase(BaseModel):
@@ -95,3 +112,12 @@ class UserInfo(UserBase):
     pwd: str
     nickname: str
     birthdate: date
+
+
+class FollowerInfo(BaseModel):
+    uid: str
+    nickname: str
+
+
+class ResponseFollowing(ResponseBase):
+    following: list[FollowerInfo]

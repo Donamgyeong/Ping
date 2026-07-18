@@ -12,7 +12,15 @@ from fastapi import (
 )
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from library.model import ResponseBase, ResponseID, ResponseChat, ChatItem, ChatNew
+from library.model import (
+    ResponseBase,
+    ResponseID,
+    ResponseChat,
+    ChatItem,
+    ChatNew,
+    ResponseChatroom,
+    Chatroom,
+)
 from service.auth_service import validate_token
 from service.user_service import get_user_by_uid
 from service.chat_service import (
@@ -20,8 +28,9 @@ from service.chat_service import (
     delete_chat,
     remove_participant,
     add_participant,
-    get_chat_rooms_by_user,
+    get_chatrooms_by_user,
     add_message,
+    get_chatroom_info,
 )
 from library.db import get_db
 from library.redis import get_redis
@@ -107,7 +116,7 @@ async def leave_chat(
     token: Annotated[str, Depends(oauth2_scheme)],
     cid: str,
     db: AsyncSession = Depends(get_db),
-):
+) -> ResponseBase:
     try:
         user = await validate_token(token, db)
         await remove_participant(db, user.uid, cid)
@@ -119,6 +128,31 @@ async def leave_chat(
     except Exception as e:
         await db.rollback()
         logging.error(f"Error leaving chat {cid} for user {user.uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.get("/rooms")
+async def get_chatrooms(
+    token: Annotated[str, Depends(oauth2_scheme)], db: AsyncSession = Depends(get_db)
+) -> ResponseChatroom:
+    try:
+        user = await validate_token(token, db)
+        cids = await get_chatrooms_by_user(db, user.uid)
+
+        rooms = await get_chatroom_info(db, cids)
+        return ResponseChatroom(
+            result="success",
+            chatrooms=list(
+                map(lambda room: Chatroom(cid=room.cid, title=room.title), rooms)
+            ),
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting chatrooms for user: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -262,7 +296,7 @@ async def websocket_endpoint(
 
     await websocket.accept(subprotocol="bearer")
 
-    cids = await get_chat_rooms_by_user(db, user.uid)
+    cids = await get_chatrooms_by_user(db, user.uid)
     pubsub = redis.pubsub()
     if cids:
         await pubsub.subscribe(*[f"chat:{cid}" for cid in cids])

@@ -82,8 +82,11 @@ async def is_followed(db: AsyncSession, follower_id: str, followee_id: str) -> b
     return len(result.all()) > 0
 
 
-async def get_following_list(db: AsyncSession, uid: str) -> list[str]:
-    stmt = select(Follow).where(Follow.follower_uid == uid)
-
-    result = await db.scalars(stmt)
-    return list(map(lambda x: x.followee_uid, result.all()))
+async def get_following(db: AsyncSession, uid: str) -> list[Profile]:
+    stmt = (
+        select(Profile)
+        .join(Follow, Profile.uid == Follow.followee_uid)
+        .where(Follow.follower_uid == uid)
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
