@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef } from 'react';
-import { useParams } from 'next/navigation';
-import { useAuth } from '@/hooks/useAuth';
+import { useEffect, useState, useRef } from "react";
+import { useParams } from "next/navigation";
+import { useAuth } from "@/hooks/useAuth";
+import { User } from "lucide-react";
 
 interface Message {
   mid: string;
@@ -10,6 +11,7 @@ interface Message {
   uid: string;
   message: string;
   date: string;
+  avatar?: string;
 }
 
 export default function ChatPage() {
@@ -17,55 +19,64 @@ export default function ChatPage() {
   const cid = params.cid as string;
   const { token, uid } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const webSocket = useRef<WebSocket | null>(null);
+  const [newMessage, setNewMessage] = useState("");
+  const socketRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  const WS_URL = API_URL.replace(/^http/, 'ws');
+  const WEBSOCKET_URL = API_URL.replace(/^http/, "ws");
 
   useEffect(() => {
     if (cid && token) {
-      const ws = new WebSocket(`${WS_URL}/chat/ws`);
+      const socket = new WebSocket(`${WEBSOCKET_URL}/chat/ws`);
+      socketRef.current = socket;
 
-      ws.onopen = () => {
-        console.log('WebSocket connection established');
+      socket.onopen = () => {
+        console.log("WebSocket connection established");
+
+        socket.send(
+          JSON.stringify({
+            type: "AUTH",
+            payload: token,
+          }),
+        );
       };
 
-      ws.onmessage = (event) => {
+      socket.onmessage = (event) => {
         const messageData = JSON.parse(event.data);
         setMessages((prevMessages) => [...prevMessages, messageData]);
       };
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+      socket.onclose = () => {
+        console.log("WebSocket connection closed");
       };
 
-      ws.onclose = () => {
-        console.log('WebSocket connection closed');
+      socket.onerror = (error) => {
+        console.error("WebSocket error:", error);
       };
-
-      webSocket.current = ws;
 
       return () => {
-        ws.close();
+        if (socketRef.current) {
+          socketRef.current.close();
+        }
       };
     }
-  }, [cid, token, WS_URL]);
+  }, [cid, token, WEBSOCKET_URL]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-  
+
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newMessage.trim() && webSocket.current?.readyState === WebSocket.OPEN) {
+    if (newMessage.trim() && socketRef.current?.readyState === WebSocket.OPEN) {
       const message = {
         cid,
         message: newMessage,
+        uid,
       };
-      webSocket.current.send(JSON.stringify(message));
-      setNewMessage('');
+      socketRef.current.send(JSON.stringify(message));
+      setNewMessage("");
     }
   };
 
@@ -79,15 +90,34 @@ export default function ChatPage() {
           {messages.map((msg) => (
             <div
               key={msg.mid}
-              className={`flex items-end ${msg.uid === uid ? 'justify-end' : 'justify-start'}`}
+              className={`flex items-end gap-2 ${
+                msg.uid === uid ? "justify-end" : "justify-start"
+              }`}
             >
+              {msg.uid !== uid && (
+                <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-gray-600 shrink-0 mb-1 overflow-hidden">
+                  {msg.avatar ? (
+                    <img
+                      src={msg.avatar}
+                      alt="avatar"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User className="w-5 h-5" />
+                  )}
+                </div>
+              )}
               <div
                 className={`px-4 py-2 rounded-lg ${
-                  msg.uid === uid ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'
+                  msg.uid === uid
+                    ? "bg-blue-500 text-white"
+                    : "bg-gray-200 text-gray-800"
                 }`}
               >
                 <p className="text-sm">{msg.message}</p>
-                <p className="text-xs text-right opacity-75">{new Date(msg.date).toLocaleTimeString()}</p>
+                <p className="text-xs text-right opacity-75">
+                  {new Date(msg.date).toLocaleTimeString()}
+                </p>
               </div>
             </div>
           ))}

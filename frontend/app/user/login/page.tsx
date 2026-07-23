@@ -36,7 +36,7 @@ export default function LoginPage() {
       }
 
       const data = await response.json();
-      await login(data.access_token);
+      await login(data.access_token, data.refresh_token);
       router.push("/"); // Redirect after login state is updated
     } catch (err: any) {
       setError(err.message);

@@ -1,10 +1,10 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Header, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from library.model import Token
+from library.model import Token, RefreshRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 from library.db import get_db
-from service.auth_service import validate_password, generate_token
+from service.auth_service import validate_password, generate_tokens, validate_refresh_token
 import logging
 from service.user_service import get_user_by_email
 
@@ -35,8 +35,12 @@ async def login(
                 detail="Incorrect username or password",
             )
 
-        token = await generate_token(user.uid)
-        return Token(access_token=token, token_type="bearer")
+        access_token, refresh_token = await generate_tokens(user.uid)
+        return Token(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+        )
     except HTTPException as e:
         await db.rollback()
         raise e
@@ -45,6 +49,45 @@ async def login(
         logging.error(
             f"An unexpected error occurred during login for {form_data.username}: {e}"
         )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.post("/refresh")
+async def refresh(
+    body: RefreshRequest | None = None,
+    authorization: str | None = Header(None),
+    db: AsyncSession = Depends(get_db),
+) -> Token:
+    token_str: str | None = None
+
+    if body and body.refresh_token:
+        token_str = body.refresh_token
+    elif authorization and authorization.startswith("Bearer "):
+        token_str = authorization.split(" ")[1]
+
+    if not token_str:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token is required",
+        )
+
+    try:
+        user = await validate_refresh_token(token_str, db)
+        access_token, refresh_token = await generate_tokens(user.uid)
+        return Token(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+        )
+    except HTTPException as e:
+        await db.rollback()
+        raise e
+    except Exception as e:
+        await db.rollback()
+        logging.error(f"An error occurred during token refresh: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",

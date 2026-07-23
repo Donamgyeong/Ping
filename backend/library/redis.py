@@ -1,7 +1,9 @@
 import redis.asyncio as redis
 from config import settings
 
-redis_client = redis.from_url(f"redis://{settings.redis_host}:{settings.redis_port}")
+redis_client = redis.Redis(
+    host=settings.redis_host, port=settings.redis_port, password=settings.redis_pass
+)
 
 
 async def get_redis():

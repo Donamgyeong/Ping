@@ -32,7 +32,7 @@ export default function FeedList({ feeds, onFeedItemClick, title = "Feeds", empt
   };
 
   return (
-    <div className="bg-black">
+    <div className="bg-black m-2">
       {title && <h2 className="text-lg font-semibold p-4 border-b border-gray-300">{title}</h2>}
       {feeds.length > 0 ? (
         <ul>

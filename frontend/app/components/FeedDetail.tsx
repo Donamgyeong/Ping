@@ -75,7 +75,7 @@ export default function FeedDetail({ feed, onBack, token }: FeedDetailProps) {
     };
   }, [feed.images, token]);
   return (
-    <div className="h-full overflow-y-auto bg-black">
+    <div className="h-full overflow-y-auto bg-black m-3">
       <button onClick={onBack} className="mb-4 text-blue-400 hover:text-blue-300">
         &larr; Back to list
       </button>

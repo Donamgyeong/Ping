@@ -87,7 +87,7 @@ const FeedImageTile = memo(function FeedImageTile({ feed, profileNickname }: Fee
 
   return (
     <div className="relative aspect-square cursor-pointer group" onClick={() => router.push(`/feed/${feed.fid}`)}>
-      <img src={imageUrl} alt={`Feed image by ${profileNickname}`} className="w-full h-full object-cover" />
+      <img src={imageUrl} alt={`Feed image by ${profileNickname}`} className="w-full h-full object-cover group-hover:opacity-75 transition-opacity duration-300" />
       <div className="absolute inset-0 bg-opacity-100 group-hover:bg-opacity-40 transition-all duration-300 flex justify-center items-center">
         <div className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center space-x-4">
           <span className="flex items-center"><HeartIcon className="w-5 h-5 mr-1" /> 0</span>

@@ -274,27 +274,26 @@ async def websocket_endpoint(
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
+    await websocket.accept()
     try:
-        auth_header = websocket.headers.get("Authorization")
-        if not auth_header:
+        auth_msg = await asyncio.wait_for(websocket.receive_json(), timeout=5.0)
+        if not auth_msg.get("type") and not auth_msg.get("type") == "AUTH":
             raise WebSocketException(
                 code=status.WS_1008_POLICY_VIOLATION,
                 reason="Authorization header is missing",
             )
 
-        scheme, token = auth_header.split()
-        if scheme.lower() != "bearer":
+        token = auth_msg.get("payload")
+        if not token:
             raise WebSocketException(
                 code=status.WS_1008_POLICY_VIOLATION,
-                reason="Invalid authentication scheme",
+                reason="Token is missing",
             )
 
-        user = await validate_token(token, db)
+        user = await validate_token(token.replace("Bearer ", ""), db)
     except (WebSocketException, HTTPException, ValueError) as e:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
-
-    await websocket.accept(subprotocol="bearer")
 
     cids = await get_chatrooms_by_user(db, user.uid)
     pubsub = redis.pubsub()
