@@ -31,11 +31,12 @@ from service.chat_service import (
     get_chatrooms_by_user,
     add_message,
     get_chatroom_info,
+    get_chat_history,
 )
 from library.db import get_db
 from library.redis import get_redis
 from redis.asyncio import Redis
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -192,20 +193,42 @@ async def invite_to_chat(
         )
 
 
+@router.get("/messages/{cid}")
 @router.get("/get/")
 async def get_chat(
     token: Annotated[str, Depends(oauth2_scheme)],
-    revision: str,
+    cid: str | None = None,
+    limit: int = 50,
+    before: str | None = None,
+    revision: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> ResponseChat:
-    await validate_token(token, db)
+    user = await validate_token(token, db)
+    target_cid = cid or revision
+    if not target_cid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chat ID is required.",
+        )
     try:
-        # TODO: Implement chat history retrieval logic
-        return ResponseChat(result="success", chat=[])
+        messages = await get_chat_history(
+            db=db, cid=target_cid, uid=user.uid, limit=limit, before_mid=before
+        )
+        chat_items = [
+            ChatItem(
+                mid=msg.message_id,
+                cid=msg.cid,
+                uid=msg.sender,
+                message=msg.content,
+                date=msg.message_date,
+            )
+            for msg in messages
+        ]
+        return ResponseChat(result="success", chat=chat_items)
     except HTTPException as e:
         raise e
     except Exception as e:
-        logging.error(f"Error getting chat history: {e}")
+        logging.error(f"Error getting chat history for cid {target_cid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -233,7 +256,7 @@ async def client_reader(
             message_data = json.loads(data)
             cid = message_data.get("cid")
             message = message_data.get("message")
-            date = datetime.now()
+            date = datetime.now(timezone.utc)
 
             if not cid or not message:
                 continue
@@ -277,7 +300,7 @@ async def websocket_endpoint(
     await websocket.accept()
     try:
         auth_msg = await asyncio.wait_for(websocket.receive_json(), timeout=5.0)
-        if not auth_msg.get("type") and not auth_msg.get("type") == "AUTH":
+        if auth_msg.get("type") != "AUTH":
             raise WebSocketException(
                 code=status.WS_1008_POLICY_VIOLATION,
                 reason="Authorization header is missing",
@@ -291,7 +314,7 @@ async def websocket_endpoint(
             )
 
         user = await validate_token(token.replace("Bearer ", ""), db)
-    except (WebSocketException, HTTPException, ValueError) as e:
+    except (WebSocketException, HTTPException, ValueError, asyncio.TimeoutError) as e:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 

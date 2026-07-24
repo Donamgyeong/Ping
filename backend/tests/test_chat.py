@@ -230,3 +230,57 @@ async def test_websocket_auth(db_session, test_user_data_1):
         pytest.fail("WebSocket connection with valid token failed")
     except Exception as e:
         pytest.fail(f"WebSocket connection with valid token failed: {e}")
+
+
+@pytest.mark.asyncio
+async def test_get_chat_history(db_session, test_user_data_1, test_user_data_2, test_user_data_3):
+    token1 = create_user_and_get_token(test_user_data_1)
+    headers1 = {"Authorization": f"Bearer {token1}"}
+
+    token2 = create_user_and_get_token(test_user_data_2)
+    headers2 = {"Authorization": f"Bearer {token2}"}
+
+    token3 = create_user_and_get_token(test_user_data_3)
+    headers3 = {"Authorization": f"Bearer {token3}"}
+
+    uid1 = await get_uid_by_email(test_user_data_1["email"])
+    uid2 = await get_uid_by_email(test_user_data_2["email"])
+
+    # 채팅방 생성 (user1, user2)
+    chat_new_payload = {"title": "History Test Chat", "participants": [uid2]}
+    response = client.post("/chat/new", headers=headers1, json=chat_new_payload)
+    assert response.status_code == 200
+    cid = response.json()["id"]
+
+    # 메시지 생성
+    from service.chat_service import add_message
+    from datetime import datetime, timedelta
+    
+    async for db in override_get_db():
+        now = datetime.now()
+        await add_message(db, cid, uid1, "Message 1", now - timedelta(minutes=3))
+        await add_message(db, cid, uid2, "Message 2", now - timedelta(minutes=2))
+        await add_message(db, cid, uid1, "Message 3", now - timedelta(minutes=1))
+        await db.commit()
+
+    # 참여자가 메시지 목록 조회
+    response = client.get(f"/chat/messages/{cid}", headers=headers1)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["result"] == "success"
+    assert len(data["chat"]) == 3
+    assert data["chat"][0]["message"] == "Message 1"
+    assert data["chat"][2]["message"] == "Message 3"
+
+    # 참여자가 아닌 유저(user3)가 조회 시 403 Forbidden
+    response = client.get(f"/chat/messages/{cid}", headers=headers3)
+    assert response.status_code == 403
+
+    # limit & before 페이징 테스트
+    mid_3 = data["chat"][2]["mid"]
+    response = client.get(f"/chat/messages/{cid}?limit=1&before={mid_3}", headers=headers1)
+    assert response.status_code == 200
+    paged_data = response.json()
+    assert len(paged_data["chat"]) == 1
+    assert paged_data["chat"][0]["message"] == "Message 2"
+

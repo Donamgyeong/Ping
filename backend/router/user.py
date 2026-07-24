@@ -179,7 +179,7 @@ async def update_nickname(
 ) -> ResponseBase:
     try:
         user = await validate_token(token, db)
-        await update_profile(db, user.uid, nickname)
+        await update_profile(db, user.uid, nickname=nickname)
         await db.commit()
         return ResponseBase(result="success")
     except HTTPException as e:
@@ -187,6 +187,50 @@ async def update_nickname(
     except Exception as e:
         await db.rollback()
         logging.error(f"Error updating nickname: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.post("/update/picture")
+async def update_picture(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    profile_picture: str,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseBase:
+    try:
+        user = await validate_token(token, db)
+        await update_profile(db, user.uid, profile_picture=profile_picture)
+        await db.commit()
+        return ResponseBase(result="success")
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        await db.rollback()
+        logging.error(f"Error updating profile picture: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.post("/update/bio")
+async def update_bio(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    bio: str,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseBase:
+    try:
+        user = await validate_token(token, db)
+        await update_profile(db, user.uid, bio=bio)
+        await db.commit()
+        return ResponseBase(result="success")
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        await db.rollback()
+        logging.error(f"Error updating bio: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",

@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from library.schema import *
 from library.model import *
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 async def create_feed(db: AsyncSession, uid: str, feed: FeedCreate) -> str:
@@ -18,7 +18,7 @@ async def create_feed(db: AsyncSession, uid: str, feed: FeedCreate) -> str:
         uid=uid,
         content=feed.content,
         location=location,
-        post_date=datetime.now(),
+        post_date=datetime.now(timezone.utc),
         private=feed.private,
     )
 

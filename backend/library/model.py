@@ -126,3 +126,22 @@ class FollowerInfo(BaseModel):
 
 class ResponseFollowing(ResponseBase):
     following: list[FollowerInfo]
+
+
+class CommentCreate(BaseModel):
+    feed_id: str
+    content: str
+
+
+class CommentItem(BaseModel):
+    comment_id: str
+    feed_id: str
+    writer: str
+    writer_nickname: str | None = None
+    content: str
+    comment_date: datetime
+
+
+class ResponseCommentList(ResponseBase):
+    comments: list[CommentItem]
+

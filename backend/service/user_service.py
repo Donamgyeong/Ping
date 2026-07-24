@@ -41,10 +41,24 @@ async def update_user(db: AsyncSession, uid: str, email: str, pwd: str):
     await db.execute(stmt)
 
 
-async def update_profile(db: AsyncSession, uid: str, nickname: str):
-    stmt = update(Profile).where(User.uid == uid).values(nickname=nickname)
+async def update_profile(
+    db: AsyncSession,
+    uid: str,
+    nickname: str | None = None,
+    bio: str | None = None,
+    profile_picture: str | None = None,
+):
+    values = {}
+    if nickname is not None:
+        values["nickname"] = nickname
+    if bio is not None:
+        values["bio"] = bio
+    if profile_picture is not None:
+        values["profile_picture"] = profile_picture
 
-    await db.execute(stmt)
+    if values:
+        stmt = update(Profile).where(Profile.uid == uid).values(**values)
+        await db.execute(stmt)
 
 
 async def get_user_by_uid(db: AsyncSession, uid: str) -> User | None:

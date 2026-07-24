@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { formatLocalDateOnly } from '@/utils/date';
 
 interface FeedItem {
     fid: string;
@@ -72,7 +73,7 @@ export default function FeedPage() {
                             <div key={feed.fid} className="p-4 border rounded-lg bg-white">
                                 <p>{feed.content}</p>
                                 <div className="text-sm text-gray-500 mt-2">
-                                    <span>Posted by {feed.uid} on {new Date(feed.post_date).toLocaleDateString()}</span>
+                                    <span>Posted by {feed.uid} on {formatLocalDateOnly(feed.post_date)}</span>
                                     <Link href={`/feed/${feed.fid}`} className="ml-4 font-semibold text-blue-500 hover:underline">
                                         View Details
                                     </Link>

@@ -1,4 +1,4 @@
-from sqlalchemy import delete, update, select
+from sqlalchemy import delete, update, select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 from library.schema import *
@@ -86,3 +86,38 @@ async def add_message(
     db.add(new_message)
 
     return mid
+
+
+async def get_chat_history(
+    db: AsyncSession,
+    cid: str,
+    uid: str,
+    limit: int = 50,
+    before_mid: str | None = None,
+) -> list[ChatMessage]:
+    participant_stmt = select(ChatParticipant).where(
+        ChatParticipant.cid == cid, ChatParticipant.uid == uid
+    )
+    participant = await db.execute(participant_stmt)
+    if not participant.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not a participant in this chat.",
+        )
+
+    query = select(ChatMessage).where(ChatMessage.cid == cid)
+
+    if before_mid:
+        subquery = (
+            select(ChatMessage.message_date)
+            .where(ChatMessage.message_id == before_mid)
+            .scalar_subquery()
+        )
+        query = query.where(ChatMessage.message_date < subquery)
+
+    query = query.order_by(desc(ChatMessage.message_date)).limit(limit)
+    result = await db.execute(query)
+    messages = list(result.scalars().all())
+
+    return messages[::-1]
+
