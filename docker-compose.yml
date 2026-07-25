@@ -101,8 +101,11 @@ services:
       - backend
     networks:
       - ping_network
+    command: npm run dev
     volumes:
       - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
 
 volumes:
   db_data:
