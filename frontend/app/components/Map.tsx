@@ -101,58 +101,116 @@ const MapUpdater = ({
 // Sub-component for individual feed marker with hover image thumbnail popup
 const FeedMarker = ({ feed }: { feed: FeedItem }) => {
   const { token } = useAuth();
+  const [currentFeed, setCurrentFeed] = useState<FeedItem>(feed);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [loadingImage, setLoadingImage] = useState(false);
+  const [fetchAttempted, setFetchAttempted] = useState(false);
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   useEffect(() => {
-    let isMounted = true;
-    let objectUrl: string | null = null;
+    setCurrentFeed(feed);
+  }, [feed]);
 
-    if (feed.images && feed.images.length > 0 && token) {
-      fetch(`${API_URL}/file/get/${feed.images[0]}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((res) => {
-          if (!res.ok) return null;
-          return res.blob();
-        })
-        .then((blob) => {
-          if (!blob || !isMounted) return;
-          objectUrl = URL.createObjectURL(blob);
-          setImageUrl(objectUrl);
-        })
-        .catch((err) => {
-          console.error("Failed to load marker popup image:", err);
+  const handleHover = React.useCallback(async () => {
+    if (fetchAttempted || !token) return;
+    setFetchAttempted(true);
+
+    let targetFeed = currentFeed;
+
+    // If detail content is empty, fetch feed detail first
+    if (!targetFeed.content) {
+      try {
+        const response = await fetch(`${API_URL}/feed/get/${feed.fid}`, {
+          headers: { Authorization: `Bearer ${token}` },
         });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.result === "success" && data.feed) {
+            targetFeed = data.feed;
+            try {
+              const userRes = await fetch(
+                `${API_URL}/user/profile/${targetFeed.uid}`,
+                {
+                  headers: { Authorization: `Bearer ${token}` },
+                }
+              );
+              if (userRes.ok) {
+                const userData = await userRes.json();
+                targetFeed.nickname = userData.nickname;
+              }
+            } catch (e) {
+              // Ignore profile fetch error
+            }
+            setCurrentFeed(targetFeed);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load marker feed detail on hover:", err);
+      }
     }
 
+    // Fetch image if present
+    if (targetFeed.images && targetFeed.images.length > 0 && !imageUrl) {
+      setLoadingImage(true);
+      try {
+        const response = await fetch(
+          `${API_URL}/file/get/${targetFeed.images[0]}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (response.ok) {
+          const blob = await response.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          setImageUrl(objectUrl);
+        }
+      } catch (err) {
+        console.error("Failed to load marker popup image:", err);
+      } finally {
+        setLoadingImage(false);
+      }
+    }
+  }, [fetchAttempted, currentFeed, feed.fid, token, API_URL, imageUrl]);
+
+  useEffect(() => {
     return () => {
-      isMounted = false;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
+      if (imageUrl) {
+        URL.revokeObjectURL(imageUrl);
       }
     };
-  }, [feed.images, token, API_URL]);
+  }, [imageUrl]);
 
   return (
     <Marker
       icon={customPingMarkerIcon}
-      position={[feed.location.lat, feed.location.long]}
+      position={[currentFeed.location.lat, currentFeed.location.long]}
       eventHandlers={{
         mouseover: (e) => {
+          handleHover();
           e.target.openPopup();
         },
       }}
     >
       <Popup className="custom-dark-popup">
         <div className="p-1 min-w-[170px] max-w-[220px]">
-          {imageUrl ? (
-            <div className="w-full h-32 mb-2.5 overflow-hidden rounded-xl bg-black border border-gray-800 shadow-inner">
-              <img
-                src={imageUrl}
-                alt="Feed Thumbnail"
-                className="w-full h-full object-cover"
-              />
+          {currentFeed.images && currentFeed.images.length > 0 ? (
+            <div className="w-full h-32 mb-2.5 overflow-hidden rounded-xl bg-black border border-gray-800 shadow-inner flex items-center justify-center relative">
+              {imageUrl ? (
+                <img
+                  src={imageUrl}
+                  alt="Feed Thumbnail"
+                  className="w-full h-full object-cover"
+                />
+              ) : loadingImage ? (
+                <div className="flex flex-col items-center gap-1.5 text-xs text-gray-400">
+                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-[10px]">Loading image...</span>
+                </div>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-600">
+                  <MapPin className="w-5 h-5 text-blue-500/60" />
+                </div>
+              )}
             </div>
           ) : (
             <div className="w-full h-14 mb-2 rounded-xl bg-black border border-gray-800 flex items-center justify-center text-gray-600">
@@ -161,13 +219,13 @@ const FeedMarker = ({ feed }: { feed: FeedItem }) => {
           )}
           <div className="space-y-1">
             <p className="font-bold text-xs text-white truncate">
-              {feed.nickname || feed.uid}
+              {currentFeed.nickname || currentFeed.uid}
             </p>
             <p className="text-xs text-gray-300 leading-relaxed line-clamp-2">
-              {feed.content}
+              {currentFeed.content || "Loading ping..."}
             </p>
             <p className="text-[10px] text-gray-500 pt-0.5">
-              {formatLocalDate(feed.post_date)}
+              {formatLocalDate(currentFeed.post_date)}
             </p>
           </div>
         </div>

@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { formatLocalDate } from "@/utils/date";
-import { Plus, User, MapPin } from "lucide-react";
+import { Plus, User, MapPin, Loader2 } from "lucide-react";
 
 interface FeedItem {
   fid: string;
@@ -24,6 +25,10 @@ interface FeedListProps {
   title?: string;
   emptyMessage?: string;
   showCreateFeedButton?: boolean;
+  totalCount?: number;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 export default function FeedList({
@@ -32,12 +37,43 @@ export default function FeedList({
   title = "Feeds",
   emptyMessage = "No pings found nearby.",
   showCreateFeedButton = true,
+  totalCount,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
 }: FeedListProps) {
   const router = useRouter();
+  const observerRef = useRef<HTMLDivElement | null>(null);
 
   const handleCreateFeedClick = () => {
     router.push("/feed/new");
   };
+
+  useEffect(() => {
+    if (!hasMore || loadingMore || !onLoadMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          onLoadMore();
+        }
+      },
+      { threshold: 0.2 }
+    );
+
+    const currentRef = observerRef.current;
+    if (currentRef) {
+      observer.observe(currentRef);
+    }
+
+    return () => {
+      if (currentRef) {
+        observer.unobserve(currentRef);
+      }
+    };
+  }, [hasMore, loadingMore, onLoadMore]);
+
+  const displayCount = totalCount !== undefined ? totalCount : feeds.length;
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl m-2">
@@ -48,7 +84,7 @@ export default function FeedList({
             <span>{title}</span>
           </h2>
           <span className="text-xs text-gray-500 font-mono bg-gray-900 border border-gray-800 px-2 py-0.5 rounded-md">
-            {feeds.length} Pings
+            {displayCount} Pings
           </span>
         </div>
       )}
@@ -77,6 +113,17 @@ export default function FeedList({
               </p>
             </div>
           ))}
+
+          {/* Lazy Loading Sentinel */}
+          {hasMore && (
+            <div
+              ref={observerRef}
+              className="py-4 text-center text-xs text-gray-400 flex justify-center items-center gap-2"
+            >
+              {loadingMore && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
+              <span>{loadingMore ? "Loading more pings..." : "Scroll down for more"}</span>
+            </div>
+          )}
         </div>
       ) : (
         <div className="p-8 text-center text-sm text-gray-500">

@@ -1,12 +1,29 @@
 "use client";
 
 import { useAuth } from "@/hooks/useAuth";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import FeedList from "./components/FeedList";
 import FeedDetail from "./components/FeedDetail";
-import { Radio, ArrowRight, MapPin } from "lucide-react";
+import {
+  Radio,
+  ArrowRight,
+  MapPin,
+  Map as MapIcon,
+  List,
+  Columns,
+} from "lucide-react";
+
+interface FeedLocationItem {
+  fid: string;
+  uid: string;
+  post_date: string;
+  location: {
+    long: number;
+    lat: number;
+  };
+}
 
 interface FeedItem {
   fid: string;
@@ -21,6 +38,8 @@ interface FeedItem {
   nickname?: string;
   private: boolean;
 }
+
+const BATCH_SIZE = 10;
 
 const Map = dynamic(() => import("./components/Map"), {
   ssr: false,
@@ -39,12 +58,72 @@ export default function Home() {
     longitude: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [feeds, setFeeds] = useState<FeedItem[]>([]);
+  const [rawFeedLocations, setRawFeedLocations] = useState<FeedLocationItem[]>(
+    []
+  );
+  const [loadedDetails, setLoadedDetails] = useState<Record<string, FeedItem>>(
+    {}
+  );
+  const [listFeeds, setListFeeds] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selectedFeed, setSelectedFeed] = useState<FeedItem | null>(null);
+  const [mobileView, setMobileView] = useState<"split" | "map" | "list">(
+    "split"
+  );
   const mapMoveTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  // Helper to fetch single feed detail
+  const fetchSingleFeedDetail = useCallback(
+    async (fid: string, authToken: string): Promise<FeedItem | null> => {
+      try {
+        const response = await fetch(`${API_URL}/feed/get/${fid}`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        if (data.result === "success" && data.feed) {
+          const feed: FeedItem = data.feed;
+          try {
+            const userResponse = await fetch(
+              `${API_URL}/user/profile/${feed.uid}`,
+              {
+                headers: { Authorization: `Bearer ${authToken}` },
+              }
+            );
+            if (userResponse.ok) {
+              const userData = await userResponse.json();
+              feed.nickname = userData.nickname;
+            }
+          } catch (e) {
+            // Ignore profile fetch error
+          }
+          return feed;
+        }
+      } catch (e) {
+        console.error(`Failed to load detail for feed ${fid}:`, e);
+      }
+      return null;
+    },
+    [API_URL]
+  );
+
+  // Helper to fetch details for a batch of feed items
+  const fetchFeedDetailsBatch = useCallback(
+    async (
+      batchItems: FeedLocationItem[],
+      authToken: string
+    ): Promise<FeedItem[]> => {
+      const promises = batchItems.map((item) =>
+        fetchSingleFeedDetail(item.fid, authToken)
+      );
+      const results = await Promise.all(promises);
+      return results.filter((feed): feed is FeedItem => feed !== null);
+    },
+    [fetchSingleFeedDetail]
+  );
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -72,13 +151,14 @@ export default function Home() {
     }
   }, [isLoggedIn]);
 
+  // Initial load of nearby feed locations and first batch for list
   useEffect(() => {
     if (isLoggedIn && location && token) {
-      const fetchFeeds = async () => {
+      const fetchInitialFeeds = async () => {
         setError(null);
         try {
           const feedIdsResponse = await fetch(
-            `${API_URL}/feed/get/location?lat=${location.latitude}&long=${location.longitude}&radius=30000`,
+            `${API_URL}/feed/get/location?lat=${location.latitude}&long=${location.longitude}&radius=3000`,
             {
               headers: {
                 Authorization: `Bearer ${token}`,
@@ -88,61 +168,33 @@ export default function Home() {
 
           if (!feedIdsResponse.ok) {
             throw new Error(
-              `Failed to fetch feed IDs: ${feedIdsResponse.statusText}`
+              `Failed to fetch feed locations: ${feedIdsResponse.statusText}`
             );
           }
 
-          const feedIdsData = await feedIdsResponse.json();
+          const feedData = await feedIdsResponse.json();
 
-          if (feedIdsData.result !== "success" || !feedIdsData.feedid) {
-            setFeeds([]);
+          if (feedData.result !== "success" || !feedData.feeds) {
+            setRawFeedLocations([]);
+            setListFeeds([]);
+            setLoadedDetails({});
             return;
           }
 
-          const feedDetailsPromises = feedIdsData.feedid.map(
-            (feedIdObj: { fid: string }) =>
-              fetch(`${API_URL}/feed/get/${feedIdObj.fid}`, {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                },
-              }).then((res) => {
-                if (!res.ok) {
-                  return null;
-                }
-                return res.json();
-              })
-          );
+          const locationList: FeedLocationItem[] = feedData.feeds;
+          setRawFeedLocations(locationList);
 
-          const feedDetailsResponses = await Promise.all(feedDetailsPromises);
+          // Lazy load: Fetch details for only the first batch (10 items) for list
+          const firstBatch = locationList.slice(0, BATCH_SIZE);
+          const initialFeeds = await fetchFeedDetailsBatch(firstBatch, token);
 
-          const validFeeds = feedDetailsResponses.filter(
-            (response) =>
-              response && response.result === "success" && response.feed
-          );
+          const detailsMap: Record<string, FeedItem> = {};
+          initialFeeds.forEach((item) => {
+            detailsMap[item.fid] = item;
+          });
 
-          const feedsWithNicknames: FeedItem[] = [];
-          for (const feedResponse of validFeeds) {
-            const feed = feedResponse.feed;
-            try {
-              const userResponse = await fetch(
-                `${API_URL}/user/profile/${feed.uid}`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                  },
-                }
-              );
-              if (userResponse.ok) {
-                const userData = await userResponse.json();
-                feed.nickname = userData.nickname;
-              }
-            } catch (e) {
-              // Ignore error
-            }
-            feedsWithNicknames.push(feed);
-          }
-
-          setFeeds(feedsWithNicknames);
+          setLoadedDetails(detailsMap);
+          setListFeeds(initialFeeds);
         } catch (err: any) {
           setError(err.message);
         } finally {
@@ -150,11 +202,74 @@ export default function Home() {
         }
       };
 
-      fetchFeeds();
+      fetchInitialFeeds();
     }
-  }, [isLoggedIn, location, token, API_URL]);
+  }, [isLoggedIn, location, token, API_URL, fetchFeedDetailsBatch]);
 
-  const handleFeedItemClick = (feed: FeedItem) => {
+  // Lazy loading handler when scrolling down in FeedList
+  const handleLoadMore = useCallback(async () => {
+    if (loadingMore || listFeeds.length >= rawFeedLocations.length || !token)
+      return;
+
+    setLoadingMore(true);
+    const nextStartIndex = listFeeds.length;
+    const nextBatchItems = rawFeedLocations.slice(
+      nextStartIndex,
+      nextStartIndex + BATCH_SIZE
+    );
+
+    const newFeeds = await fetchFeedDetailsBatch(nextBatchItems, token);
+
+    setLoadedDetails((prev) => {
+      const updated = { ...prev };
+      newFeeds.forEach((item) => {
+        updated[item.fid] = item;
+      });
+      return updated;
+    });
+
+    setListFeeds((prev) => [...prev, ...newFeeds]);
+    setLoadingMore(false);
+  }, [
+    loadingMore,
+    listFeeds.length,
+    rawFeedLocations,
+    token,
+    fetchFeedDetailsBatch,
+  ]);
+
+  // All feeds to display on Map (combines location with loaded details if available)
+  const mapFeeds: FeedItem[] = useMemo(() => {
+    return rawFeedLocations.map((locItem) => {
+      const detail = loadedDetails[locItem.fid];
+      if (detail) {
+        return detail;
+      }
+      return {
+        fid: locItem.fid,
+        uid: locItem.uid,
+        post_date: locItem.post_date,
+        location: locItem.location,
+        content: "",
+        images: [],
+        private: false,
+      };
+    });
+  }, [rawFeedLocations, loadedDetails]);
+
+  const handleFeedItemClick = async (feed: FeedItem) => {
+    if (!feed.content && token) {
+      const detail = await fetchSingleFeedDetail(feed.fid, token);
+      if (detail) {
+        setSelectedFeed(detail);
+        setLoadedDetails((prev) => ({ ...prev, [detail.fid]: detail }));
+        setLocation({
+          latitude: detail.location.lat,
+          longitude: detail.location.long,
+        });
+        return;
+      }
+    }
     setSelectedFeed(feed);
     setLocation({ latitude: feed.location.lat, longitude: feed.location.long });
   };
@@ -205,7 +320,8 @@ export default function Home() {
           Connect Around You
         </h1>
         <p className="text-gray-400 text-center max-w-md mb-8 text-sm sm:text-base leading-relaxed">
-          Discover local stories, location-based pings, and real-time discussions right where you are.
+          Discover local stories, location-based pings, and real-time
+          discussions right where you are.
         </p>
 
         <div className="flex gap-4">
@@ -228,9 +344,52 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] w-full overflow-hidden bg-black">
-      {/* Sidebar View */}
-      <div className="w-full md:w-96 shrink-0 bg-black border-r border-gray-800/80 overflow-y-auto">
+    <div className="flex flex-col md:flex-row h-[calc(100vh-4rem-3.5rem)] md:h-[calc(100vh-4rem)] w-full overflow-hidden bg-black relative">
+      <div className="md:hidden fixed bottom-16 left-1/2 -translate-x-1/2 z-[9999] bg-gray-900/95 border border-gray-800 backdrop-blur-lg p-1.5 rounded-full shadow-2xl flex items-center gap-1 text-xs">
+        <button
+          onClick={() => setMobileView("split")}
+          className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all ${
+            mobileView === "split"
+              ? "bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30"
+              : "text-gray-400 hover:text-white"
+          }`}
+        >
+          <Columns className="w-3.5 h-3.5" />
+          <span>분할</span>
+        </button>
+        <button
+          onClick={() => setMobileView("map")}
+          className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all ${
+            mobileView === "map"
+              ? "bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30"
+              : "text-gray-400 hover:text-white"
+          }`}
+        >
+          <MapIcon className="w-3.5 h-3.5" />
+          <span>지도</span>
+        </button>
+        <button
+          onClick={() => setMobileView("list")}
+          className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all ${
+            mobileView === "list"
+              ? "bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30"
+              : "text-gray-400 hover:text-white"
+          }`}
+        >
+          <List className="w-3.5 h-3.5" />
+          <span>목록</span>
+        </button>
+      </div>
+
+      <div
+        className={`w-full md:w-1/5 shrink-0 bg-black border-t md:border-t-0 md:border-r border-gray-800/80 overflow-y-auto order-2 md:order-1 ${
+          mobileView === "map"
+            ? "hidden md:block"
+            : mobileView === "split"
+            ? "h-1/4 md:h-full"
+            : "h-full md:h-full"
+        }`}
+      >
         {selectedFeed ? (
           <FeedDetail
             feed={selectedFeed}
@@ -239,15 +398,26 @@ export default function Home() {
           />
         ) : (
           <FeedList
-            feeds={feeds}
+            feeds={listFeeds}
+            totalCount={rawFeedLocations.length}
+            hasMore={listFeeds.length < rawFeedLocations.length}
+            loadingMore={loadingMore}
+            onLoadMore={handleLoadMore}
             onFeedItemClick={handleFeedItemClick}
             title="Nearby Pings"
           />
         )}
       </div>
 
-      {/* Map View */}
-      <div className="hidden md:block flex-1 relative bg-gray-950">
+      <div
+        className={`w-full relative bg-gray-950 order-1 md:order-2 ${
+          mobileView === "list"
+            ? "hidden md:block md:flex-1 md:h-full"
+            : mobileView === "split"
+            ? "h-3/4 md:h-full md:flex-1 shrink-0 md:shrink"
+            : "h-full md:h-full md:flex-1"
+        }`}
+      >
         {error && (
           <div className="absolute top-4 left-4 z-20 bg-red-950/80 border border-red-800 text-red-200 text-xs px-4 py-2 rounded-xl backdrop-blur-md shadow-lg flex items-center gap-2">
             <MapPin className="w-4 h-4 text-red-400" />
@@ -257,7 +427,7 @@ export default function Home() {
         {location ? (
           <Map
             location={location}
-            feeds={feeds}
+            feeds={mapFeeds}
             selectedFeed={selectedFeed}
             onMapMoveEnd={handleMapMoveEnd}
           />

@@ -8,9 +8,11 @@ from library.model import (
     FeedCreate,
     FeedUpdate,
     FeedItem,
+    FeedLocation,
     ResponseBase,
     ResponseFeed,
     ResponseFeedID,
+    ResponseFeedLocation,
     ResponseID,
     ResponseIDS,
     Location,
@@ -30,6 +32,8 @@ from service.user_service import is_followed, get_following
 from datetime import datetime, timedelta, timezone
 from geoalchemy2.shape import from_shape, to_shape
 from library.db import get_db
+from library.redis import get_redis
+from redis.asyncio import Redis
 import logging
 
 router = APIRouter(prefix="/feed", tags=["feed"])
@@ -113,21 +117,26 @@ async def get_feed_by_location(
     lat: float,
     radius: int,
     db: AsyncSession = Depends(get_db),
-) -> ResponseFeedID:
+    redis: Redis = Depends(get_redis),
+) -> ResponseFeedLocation:
     user = await validate_token(token, db)
     try:
         feeds = await get_feeds_by_position(db, long, lat, radius)
-        result = list[FeedID]()
+        result = list[FeedLocation]()
 
         following_list = await get_following(db, user.uid)
         following_uids = map(lambda x: x.uid, following_list)
         for feed in feeds:
             if feed.uid in following_uids or not feed.private or feed.uid == user.uid:
-                feedID = FeedID(
-                    fid=feed.feed_id, uid=feed.uid, post_date=feed.post_date
+                point = to_shape(feed.location)
+                feedID = FeedLocation(
+                    fid=feed.feed_id,
+                    uid=feed.uid,
+                    post_date=feed.post_date,
+                    location=Location(long=point.x, lat=point.y),
                 )
                 result.append(feedID)
-        return ResponseFeedID(result="success", feedid=result)
+        return ResponseFeedLocation(result="success", feeds=result)
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -219,6 +228,7 @@ async def get_feed(
 async def get_following_feeds(
     token: Annotated[str, Depends(oauth2_scheme)],
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ) -> ResponseFeedID:
     user = await validate_token(token, db)
     try:
@@ -243,7 +253,7 @@ async def get_following_feeds(
     except HTTPException as e:
         raise e
     except Exception as e:
-        logging.error(f"Error getting following feeds for user {user.uid}: {e}")
+        logging.error(f"Error getting following feeds: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",

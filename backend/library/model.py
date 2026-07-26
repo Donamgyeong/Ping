@@ -2,15 +2,19 @@ from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
 
 
+class Location(BaseModel):
+    long: float
+    lat: float
+
+
 class FeedID(BaseModel):
     fid: str
     uid: str
     post_date: datetime
 
 
-class Location(BaseModel):
-    long: float
-    lat: float
+class FeedLocation(FeedID):
+    location: Location
 
 
 class FeedBase(BaseModel):
@@ -59,6 +63,10 @@ class ResponseFeed(ResponseBase):
 
 class ResponseFeedID(ResponseBase):
     feedid: list[FeedID]
+
+
+class ResponseFeedLocation(ResponseBase):
+    feeds: list[FeedLocation]
 
 
 class ResponseID(ResponseBase):
@@ -144,4 +152,3 @@ class CommentItem(BaseModel):
 
 class ResponseCommentList(ResponseBase):
     comments: list[CommentItem]
-
