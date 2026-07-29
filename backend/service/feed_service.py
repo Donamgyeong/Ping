@@ -1,13 +1,25 @@
-from sqlalchemy import delete, update, select, func
+from sqlalchemy import delete, update, select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2 import Geometry, Geography
+from geoalchemy2.functions import (
+    ST_NumGeometries,
+    ST_Contains,
+    ST_SetSRID,
+    ST_GeomFromGeoHash,
+    ST_ClusterDBSCAN,
+    ST_Collect,
+    ST_Centroid,
+    ST_AsGeoJSON,
+)
 from geoalchemy2.shape import from_shape
+from redis.asyncio import Redis
 from shapely.geometry import Point
 from fastapi import HTTPException, status
 from library.schema import *
 from library.model import *
 from uuid import uuid4
 from datetime import datetime, timezone
+import geohash2
 
 
 async def create_feed(db: AsyncSession, uid: str, feed: FeedCreate) -> str:
@@ -67,6 +79,49 @@ async def get_feeds_by_position(
     result = await db.scalars(stmt)
 
     return list(result.all())
+
+
+async def get_feeds_by_hash(
+    db: AsyncSession, redis: Redis, hashes: list[str]
+) -> list[Feed]:
+    if not hashes:
+        return []
+
+    redis.set("", "")
+
+    conditions = []
+    for hash in hashes:
+        geohash2.decode(hash)
+        conditions.append(
+            ST_Contains(
+                ST_SetSRID(ST_GeomFromGeoHash(hash), 4326),
+                Feed.location,
+            )
+        )
+
+    stmt = select(Feed).where(or_(*conditions))
+    result = await db.scalars(stmt)
+    return list(result.all())
+
+
+async def get_feeds_count_by_hash(
+    db: AsyncSession, redis: Redis, hashes: list[str]
+) -> list:
+    counts = []
+    for hash in hashes:
+        stmt = select(
+            ST_NumGeometries(ST_Collect(Feed.location)).label("feed_count"),
+            ST_AsGeoJSON(ST_Centroid(ST_Collect(Feed.location))).label("center_point"),
+        ).where(
+            ST_Contains(
+                ST_SetSRID(ST_GeomFromGeoHash(hash), 4326),
+                Feed.location,
+            )
+        )
+        result = await db.execute(stmt)
+        counts.extend(result.all())
+
+    return counts
 
 
 async def delete_feed(db: AsyncSession, uid: str, fid: str):

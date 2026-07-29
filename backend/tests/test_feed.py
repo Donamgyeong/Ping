@@ -231,18 +231,21 @@ async def test_get_feed_by_location(db_session, auth_headers, feed_payload):
     client.post("/feed/new", headers=auth_headers, json=feed_payload)
 
     # 2. 위치 기반 조회
+    import geohash2
+
     long = feed_payload["location"]["long"]
     lat = feed_payload["location"]["lat"]
-    radius = 1000  # 1km
+    gh = geohash2.encode(lat, long, 6)
 
-    response = client.get(
-        f"/feed/get/location?long={long}&lat={lat}&radius={radius}",
+    response = client.post(
+        "/feed/get/location",
+        json={"hashes": [gh]},
         headers=auth_headers,
     )
     assert response.status_code == 200
     response_json = response.json()
     assert response_json["result"] == "success"
-    assert len(response_json["feedid"]) > 0
+    assert len(response_json["feeds"]) > 0
 
 
 @pytest.mark.asyncio

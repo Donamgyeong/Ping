@@ -2,9 +2,18 @@ from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
 
 
+class GeoHash(BaseModel):
+    hashes: list[str]
+
+
 class Location(BaseModel):
     long: float
     lat: float
+
+
+class FeedCountInfo(BaseModel):
+    count: int
+    location: Location
 
 
 class FeedID(BaseModel):
@@ -67,6 +76,10 @@ class ResponseFeedID(ResponseBase):
 
 class ResponseFeedLocation(ResponseBase):
     feeds: list[FeedLocation]
+
+
+class ResponseFeedCount(ResponseBase):
+    count: list[FeedCountInfo]
 
 
 class ResponseID(ResponseBase):

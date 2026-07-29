@@ -56,27 +56,88 @@ interface FeedItem {
   private: boolean;
 }
 
+export interface MapViewInfo {
+  bounds: {
+    south: number;
+    west: number;
+    north: number;
+    east: number;
+  };
+  zoom: number;
+  center: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface FeedCountItem {
+  count: number;
+  location: {
+    long: number;
+    lat: number;
+  };
+}
+
 interface MapProps {
   location: {
     latitude: number;
     longitude: number;
   };
   feeds: FeedItem[];
+  feedCounts?: FeedCountItem[];
   selectedFeed: FeedItem | null;
-  onMapMoveEnd: (location: { latitude: number; longitude: number }) => void;
+  onMapMoveEnd: (viewInfo: MapViewInfo) => void;
 }
 
 // Map movement listener
 const MapEvents = ({
   onMoveEnd,
 }: {
-  onMoveEnd: (center: L.LatLng) => void;
+  onMoveEnd: (viewInfo: MapViewInfo) => void;
 }) => {
-  useMapEvents({
-    moveend: (e) => {
-      onMoveEnd(e.target.getCenter());
-    },
+  const handleViewChange = () => {
+    const bounds = map.getBounds();
+    const zoom = map.getZoom();
+    const center = map.getCenter();
+    onMoveEnd({
+      bounds: {
+        south: bounds.getSouth(),
+        west: bounds.getWest(),
+        north: bounds.getNorth(),
+        east: bounds.getEast(),
+      },
+      zoom,
+      center: {
+        latitude: center.lat,
+        longitude: center.lng,
+      },
+    });
+  };
+
+  const map = useMapEvents({
+    moveend: handleViewChange,
+    zoomend: handleViewChange,
   });
+
+  useEffect(() => {
+    const bounds = map.getBounds();
+    const zoom = map.getZoom();
+    const center = map.getCenter();
+    onMoveEnd({
+      bounds: {
+        south: bounds.getSouth(),
+        west: bounds.getWest(),
+        north: bounds.getNorth(),
+        east: bounds.getEast(),
+      },
+      zoom,
+      center: {
+        latitude: center.lat,
+        longitude: center.lng,
+      },
+    });
+  }, [map, onMoveEnd]);
+
   return null;
 };
 
@@ -234,22 +295,48 @@ const FeedMarker = ({ feed }: { feed: FeedItem }) => {
   );
 };
 
+const createCountMarkerIcon = (count: number) =>
+  L.divIcon({
+    className: "custom-count-marker",
+    html: `<div class="relative group cursor-pointer flex items-center justify-center">
+      <div class="absolute -inset-1 rounded-full bg-purple-500/50 blur-xs animate-pulse"></div>
+      <div class="px-2.5 py-1 rounded-full bg-gray-950 border-2 border-purple-500 shadow-xl flex items-center gap-1 text-purple-300 font-bold text-xs group-hover:scale-110 group-hover:border-white transition-all">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+          <circle cx="12" cy="10" r="3"/>
+        </svg>
+        <span>${count}</span>
+      </div>
+    </div>`,
+    iconSize: [40, 30],
+    iconAnchor: [20, 15],
+  });
+
 const MapContent = ({
   feeds,
+  feedCounts,
   selectedFeed,
   onMapMoveEnd,
 }: Omit<MapProps, "location">) => {
-  const handleMoveEnd = (center: L.LatLng) => {
-    onMapMoveEnd({ latitude: center.lat, longitude: center.lng });
-  };
-
   return (
     <>
       <MapUpdater selectedFeed={selectedFeed} />
-      <MapEvents onMoveEnd={handleMoveEnd} />
-      {feeds.map((feed) => (
-        <FeedMarker key={feed.fid} feed={feed} />
-      ))}
+      <MapEvents onMoveEnd={onMapMoveEnd} />
+      {feedCounts && feedCounts.length > 0
+        ? feedCounts.map((item, idx) => (
+            <Marker
+              key={`count-${idx}`}
+              icon={createCountMarkerIcon(item.count)}
+              position={[item.location.lat, item.location.long]}
+            >
+              <Popup className="custom-dark-popup">
+                <div className="p-2 text-center text-xs font-semibold text-gray-200">
+                  {item.count} pings in this area
+                </div>
+              </Popup>
+            </Marker>
+          ))
+        : feeds.map((feed) => <FeedMarker key={feed.fid} feed={feed} />)}
     </>
   );
 };
@@ -258,17 +345,25 @@ const MemoizedMap = React.memo(Map, (prevProps, nextProps) => {
   const feedsAreEqual =
     prevProps.feeds.length === nextProps.feeds.length &&
     JSON.stringify(prevProps.feeds) === JSON.stringify(nextProps.feeds);
+  const countsAreEqual =
+    JSON.stringify(prevProps.feedCounts) === JSON.stringify(nextProps.feedCounts);
   const selectedFeedIsEqual =
     prevProps.selectedFeed?.fid === nextProps.selectedFeed?.fid;
 
-  return feedsAreEqual && selectedFeedIsEqual;
+  return feedsAreEqual && countsAreEqual && selectedFeedIsEqual;
 });
 
 MemoizedMap.displayName = "Map";
 
 export default MemoizedMap;
 
-function Map({ location, feeds, selectedFeed, onMapMoveEnd }: MapProps) {
+function Map({
+  location,
+  feeds,
+  feedCounts,
+  selectedFeed,
+  onMapMoveEnd,
+}: MapProps) {
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -293,6 +388,7 @@ function Map({ location, feeds, selectedFeed, onMapMoveEnd }: MapProps) {
       />
       <MapContent
         feeds={feeds}
+        feedCounts={feedCounts}
         selectedFeed={selectedFeed}
         onMapMoveEnd={onMapMoveEnd}
       />

@@ -2,21 +2,7 @@ from typing import Annotated
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from library.model import (
-    FeedID,
-    FeedBase,
-    FeedCreate,
-    FeedUpdate,
-    FeedItem,
-    FeedLocation,
-    ResponseBase,
-    ResponseFeed,
-    ResponseFeedID,
-    ResponseFeedLocation,
-    ResponseID,
-    ResponseIDS,
-    Location,
-)
+from library.model import *
 from library.schema import Feed
 from service.feed_service import (
     create_feed,
@@ -24,7 +10,8 @@ from service.feed_service import (
     delete_feed,
     get_feeds_by_uid,
     get_one_feed,
-    get_feeds_by_position,
+    get_feeds_by_hash,
+    get_feeds_count_by_hash,
     get_image_list,
 )
 from service.auth_service import validate_token
@@ -34,6 +21,7 @@ from geoalchemy2.shape import from_shape, to_shape
 from library.db import get_db
 from library.redis import get_redis
 from redis.asyncio import Redis
+import json
 import logging
 
 router = APIRouter(prefix="/feed", tags=["feed"])
@@ -110,33 +98,50 @@ async def delete(
         )
 
 
-@router.get("/get/location")
+@router.post("/get/location")
 async def get_feed_by_location(
     token: Annotated[str, Depends(oauth2_scheme)],
-    long: float,
-    lat: float,
-    radius: int,
+    geohash: GeoHash,
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
-) -> ResponseFeedLocation:
+) -> ResponseFeedLocation | ResponseFeedCount:
     user = await validate_token(token, db)
     try:
-        feeds = await get_feeds_by_position(db, long, lat, radius)
-        result = list[FeedLocation]()
+        if geohash.hashes and len(geohash.hashes[0]) <= 5:
+            raw_counts = await get_feeds_count_by_hash(db, redis, geohash.hashes)
+            count_list = list[FeedCountInfo]()
+            for row in raw_counts:
+                if row.feed_count and row.feed_count > 0 and row.center_point:
+                    geojson = json.loads(row.center_point)
+                    coords = geojson.get("coordinates")
+                    if coords and len(coords) >= 2:
+                        count_info = FeedCountInfo(
+                            count=row.feed_count,
+                            location=Location(long=coords[0], lat=coords[1]),
+                        )
+                        count_list.append(count_info)
+            return ResponseFeedCount(result="success", count=count_list)
+        else:
+            feeds = await get_feeds_by_hash(db, redis, geohash.hashes)
+            result = list[FeedLocation]()
 
-        following_list = await get_following(db, user.uid)
-        following_uids = map(lambda x: x.uid, following_list)
-        for feed in feeds:
-            if feed.uid in following_uids or not feed.private or feed.uid == user.uid:
-                point = to_shape(feed.location)
-                feedID = FeedLocation(
-                    fid=feed.feed_id,
-                    uid=feed.uid,
-                    post_date=feed.post_date,
-                    location=Location(long=point.x, lat=point.y),
-                )
-                result.append(feedID)
-        return ResponseFeedLocation(result="success", feeds=result)
+            following_list = await get_following(db, user.uid)
+            following_uids = map(lambda x: x.uid, following_list)
+            for feed in feeds:
+                if (
+                    feed.uid in following_uids
+                    or not feed.private
+                    or feed.uid == user.uid
+                ):
+                    point = to_shape(feed.location)
+                    feedID = FeedLocation(
+                        fid=feed.feed_id,
+                        uid=feed.uid,
+                        post_date=feed.post_date,
+                        location=Location(long=point.x, lat=point.y),
+                    )
+                    result.append(feedID)
+            return ResponseFeedLocation(result="success", feeds=result)
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -194,7 +199,7 @@ async def get_feed(
         is_owner = feed.uid == user.uid
         followed = await is_followed(db, user.uid, feed.uid)
 
-        if feed.private and (not is_owner or not followed):
+        if feed.private and not (is_owner or followed):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this feed",

@@ -3,11 +3,11 @@ from requests_toolbelt import MultipartEncoder
 import random
 
 URL = "http://localhost:8000"
-CNT = 1000000
-IMAGE = "68b0ab96-ec97-4c7a-8b40-aa5b0dcb7f67"
+CNT = 50000
+IMAGE = "af7ec747-fbc6-417c-950a-21fd33c75337"
 
-lat_rng = {"low": 37.42, "high": 37.70}
-lng_rng = {"low": 126.45, "high": 127.11}
+lat_rng = {"low": 33.00, "high": 43.00}
+lng_rng = {"low": 124.00, "high": 132.11}
 
 uid = "ttt16872@gmail.com"
 pwd = "string"

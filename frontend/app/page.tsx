@@ -6,6 +6,8 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import FeedList from "./components/FeedList";
 import FeedDetail from "./components/FeedDetail";
+import { MapViewInfo } from "./components/Map";
+import { getGeohashesForBounds } from "@/utils/geohash";
 import {
   Radio,
   ArrowRight,
@@ -61,6 +63,9 @@ export default function Home() {
   const [rawFeedLocations, setRawFeedLocations] = useState<FeedLocationItem[]>(
     []
   );
+  const [feedCounts, setFeedCounts] = useState<
+    { count: number; location: { long: number; lat: number } }[]
+  >([]);
   const [loadedDetails, setLoadedDetails] = useState<Record<string, FeedItem>>(
     {}
   );
@@ -72,6 +77,7 @@ export default function Home() {
     "split"
   );
   const mapMoveTimeout = useRef<NodeJS.Timeout | null>(null);
+  const lastFetchedHashesRef = useRef<string>("");
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -125,6 +131,78 @@ export default function Home() {
     [fetchSingleFeedDetail]
   );
 
+  // Helper to fetch feeds by geohash list
+  const fetchFeedsByHashes = useCallback(
+    async (geohashes: string[], authToken: string) => {
+      if (geohashes.length === 0) return;
+      setError(null);
+      try {
+        const feedIdsResponse = await fetch(`${API_URL}/feed/get/location`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({ hashes: geohashes }),
+        });
+
+        if (!feedIdsResponse.ok) {
+          throw new Error(
+            `Failed to fetch feed locations: ${feedIdsResponse.statusText}`
+          );
+        }
+
+        const feedData = await feedIdsResponse.json();
+
+        if (feedData.result === "success" && feedData.count) {
+          setFeedCounts(feedData.count);
+          setRawFeedLocations([]);
+          setListFeeds([]);
+          setLoadedDetails({});
+          return;
+        }
+
+        if (feedData.result !== "success" || !feedData.feeds) {
+          setFeedCounts([]);
+          setRawFeedLocations([]);
+          setListFeeds([]);
+          setLoadedDetails({});
+          return;
+        }
+
+        setFeedCounts([]);
+
+        const locationList: FeedLocationItem[] = [];
+        const seenFids = new Set<string>();
+        for (const item of feedData.feeds) {
+          if (!seenFids.has(item.fid)) {
+            seenFids.add(item.fid);
+            locationList.push(item);
+          }
+        }
+
+        setRawFeedLocations(locationList);
+
+        // Lazy load: Fetch details for only the first batch (10 items) for list
+        const firstBatch = locationList.slice(0, BATCH_SIZE);
+        const initialFeeds = await fetchFeedDetailsBatch(firstBatch, authToken);
+
+        const detailsMap: Record<string, FeedItem> = {};
+        initialFeeds.forEach((item) => {
+          detailsMap[item.fid] = item;
+        });
+
+        setLoadedDetails(detailsMap);
+        setListFeeds(initialFeeds);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [API_URL, fetchFeedDetailsBatch]
+  );
+
   useEffect(() => {
     if (isLoggedIn) {
       if (navigator.geolocation) {
@@ -151,60 +229,25 @@ export default function Home() {
     }
   }, [isLoggedIn]);
 
-  // Initial load of nearby feed locations and first batch for list
+  // Initial load of nearby feed locations when user location is available
   useEffect(() => {
     if (isLoggedIn && location && token) {
-      const fetchInitialFeeds = async () => {
-        setError(null);
-        try {
-          const feedIdsResponse = await fetch(
-            `${API_URL}/feed/get/location?lat=${location.latitude}&long=${location.longitude}&radius=3000`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            }
-          );
-
-          if (!feedIdsResponse.ok) {
-            throw new Error(
-              `Failed to fetch feed locations: ${feedIdsResponse.statusText}`
-            );
-          }
-
-          const feedData = await feedIdsResponse.json();
-
-          if (feedData.result !== "success" || !feedData.feeds) {
-            setRawFeedLocations([]);
-            setListFeeds([]);
-            setLoadedDetails({});
-            return;
-          }
-
-          const locationList: FeedLocationItem[] = feedData.feeds;
-          setRawFeedLocations(locationList);
-
-          // Lazy load: Fetch details for only the first batch (10 items) for list
-          const firstBatch = locationList.slice(0, BATCH_SIZE);
-          const initialFeeds = await fetchFeedDetailsBatch(firstBatch, token);
-
-          const detailsMap: Record<string, FeedItem> = {};
-          initialFeeds.forEach((item) => {
-            detailsMap[item.fid] = item;
-          });
-
-          setLoadedDetails(detailsMap);
-          setListFeeds(initialFeeds);
-        } catch (err: any) {
-          setError(err.message);
-        } finally {
-          setLoading(false);
-        }
+      const latDelta = 0.03;
+      const lngDelta = 0.03;
+      const initialBounds = {
+        south: location.latitude - latDelta,
+        north: location.latitude + latDelta,
+        west: location.longitude - lngDelta,
+        east: location.longitude + lngDelta,
       };
-
-      fetchInitialFeeds();
+      const initialGeohashes = getGeohashesForBounds(initialBounds, 13);
+      const hashKey = initialGeohashes.slice().sort().join(",");
+      if (lastFetchedHashesRef.current === "") {
+        lastFetchedHashesRef.current = hashKey;
+        fetchFeedsByHashes(initialGeohashes, token);
+      }
     }
-  }, [isLoggedIn, location, token, API_URL, fetchFeedDetailsBatch]);
+  }, [isLoggedIn, location, token, fetchFeedsByHashes]);
 
   // Lazy loading handler when scrolling down in FeedList
   const handleLoadMore = useCallback(async () => {
@@ -275,23 +318,30 @@ export default function Home() {
   };
 
   const handleMapMoveEnd = useCallback(
-    (newLocation: { latitude: number; longitude: number }) => {
+    (viewInfo: MapViewInfo) => {
+      if (!token) return;
+
       if (mapMoveTimeout.current) {
         clearTimeout(mapMoveTimeout.current);
       }
 
       mapMoveTimeout.current = setTimeout(() => {
-        if (
-          location &&
-          Math.abs(location.latitude - newLocation.latitude) < 0.001 &&
-          Math.abs(location.longitude - newLocation.longitude) < 0.001
-        ) {
+        const geohashes = getGeohashesForBounds(viewInfo.bounds, viewInfo.zoom);
+        const hashKey = geohashes.slice().sort().join(",");
+
+        if (hashKey === lastFetchedHashesRef.current) {
           return;
         }
-        setLocation(newLocation);
-      }, 500);
+
+        lastFetchedHashesRef.current = hashKey;
+        setLocation({
+          latitude: viewInfo.center.latitude,
+          longitude: viewInfo.center.longitude,
+        });
+        fetchFeedsByHashes(geohashes, token);
+      }, 400);
     },
-    [location]
+    [token, fetchFeedsByHashes]
   );
 
   const handleBackToFeedList = () => {
@@ -428,6 +478,7 @@ export default function Home() {
           <Map
             location={location}
             feeds={mapFeeds}
+            feedCounts={feedCounts}
             selectedFeed={selectedFeed}
             onMapMoveEnd={handleMapMoveEnd}
           />

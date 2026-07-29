@@ -204,27 +204,20 @@ async def test_websocket_auth(db_session, test_user_data_1):
     WebSocket /chat/ws
     - 인증 성공 및 실패 테스트
     """
-    # 1. 토큰 없이 연결 시도 (실패)
+    # 1. 잘못된 토큰으로 연결 후 AUTH 메시지 전송 시도 (실패)
     try:
         with client.websocket_connect("/chat/ws") as websocket:
-            # TestClient는 연결 실패 시 바로 예외를 발생시킵니다.
-            # 하지만 여기서는 서버가 연결을 닫는 것을 테스트합니다.
-            # TestClient의 websocket_connect는 연결이 성공적으로 accept될 때까지 기다립니다.
-            # 서버가 헤더 없이 바로 닫으면, `WebSocketDisconnect`가 발생할 수 있습니다.
-            # 여기서는 연결 자체가 안되는 것을 확인하는 것이 목적입니다.
+            websocket.send_json({"type": "AUTH", "payload": "invalid_token"})
+            websocket.receive_json()
             assert False
     except WebSocketDisconnect:
         assert True
 
-    # 2. 유효한 토큰으로 연결 시도 (성공)
+    # 2. 유효한 토큰으로 연결 및 AUTH 메시지 전송 (성공)
     token = create_user_and_get_token(test_user_data_1)
-    headers = {"Authorization": f"Bearer {token}"}
     try:
-        with client.websocket_connect(
-            "/chat/ws", subprotocols=["bearer"], headers=headers
-        ) as websocket:
-            # 연결이 성공적으로 수락되어야 합니다.
-            # 간단한 메시지를 보내고 닫습니다.
+        with client.websocket_connect("/chat/ws") as websocket:
+            websocket.send_json({"type": "AUTH", "payload": token})
             websocket.close()
     except WebSocketDisconnect:
         pytest.fail("WebSocket connection with valid token failed")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, memo } from "react";
+import { useEffect, useState, memo, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { User as UserIcon, UserPlus, UserCheck, Clock, Settings } from "lucide-react";
@@ -38,6 +38,8 @@ interface FeedImageTileProps {
   profileNickname: string;
 }
 
+const BATCH_SIZE = 12;
+
 const FeedImageTile = memo(function FeedImageTile({
   feed,
   profileNickname,
@@ -45,9 +47,35 @@ const FeedImageTile = memo(function FeedImageTile({
   const { token } = useAuth();
   const router = useRouter();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const tileRef = useRef<HTMLDivElement | null>(null);
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+  // IntersectionObserver to set isVisible when tile comes into viewport
   useEffect(() => {
+    const node = tileRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  // Fetch image only when tile becomes visible
+  useEffect(() => {
+    if (!isVisible) return;
     let isMounted = true;
     let objectUrl: string | null = null;
 
@@ -80,24 +108,25 @@ const FeedImageTile = memo(function FeedImageTile({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [feed.images, token, API_URL]);
-
-  if (!imageUrl) {
-    return (
-      <div className="relative aspect-square bg-gray-900 border border-gray-800 rounded-xl animate-pulse" />
-    );
-  }
+  }, [isVisible, feed.images, token, API_URL]);
 
   return (
     <div
+      ref={tileRef}
       className="relative aspect-square cursor-pointer group rounded-xl overflow-hidden border border-gray-800 bg-gray-950"
       onClick={() => router.push(`/feed/${feed.fid}`)}
     >
-      <img
-        src={imageUrl}
-        alt={`Feed image by ${profileNickname}`}
-        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-      />
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={`Feed image by ${profileNickname}`}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        />
+      ) : (
+        <div className="w-full h-full bg-gray-900 border border-gray-800 animate-pulse flex items-center justify-center">
+          <div className="w-5 h-5 border-2 border-blue-500/40 border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex justify-center items-center p-2">
         <p className="text-xs text-white line-clamp-2 text-center font-medium">
           {feed.content}
@@ -117,16 +146,39 @@ export default function UserProfilePage() {
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [rawFeedIds, setRawFeedIds] = useState<{ fid: string }[]>([]);
   const [feeds, setFeeds] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [followers, setFollowers] = useState<FollowingFollower[]>([]);
   const [following, setFollowing] = useState<FollowingFollower[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [followStatus, setFollowStatus] =
     useState<FollowStatus["status"] | null>(null);
 
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
   const isMyProfile = loggedInUid === uid;
+
+  const fetchFeedDetailsBatch = useCallback(
+    async (
+      batchIds: { fid: string }[],
+      authToken: string,
+      nickname: string
+    ): Promise<FeedItem[]> => {
+      const promises = batchIds.map((item) =>
+        fetch(`${API_URL}/feed/get/${item.fid}`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        }).then((res) => (res.ok ? res.json() : null))
+      );
+      const responses = await Promise.all(promises);
+      return responses
+        .filter((res) => res && res.result === "success" && res.feed)
+        .map((res) => ({ ...res.feed, nickname }));
+    },
+    [API_URL]
+  );
 
   useEffect(() => {
     if (!uid || !token) return;
@@ -171,39 +223,23 @@ export default function UserProfilePage() {
             feedIdsData.result === "success" &&
             Array.isArray(feedIdsData.feedid)
           ) {
-            const feedDetailsPromises = feedIdsData.feedid.map(
-              (feedIdObj: { fid: string }) =>
-                fetch(`${API_URL}/feed/get/${feedIdObj.fid}`, {
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                  },
-                }).then((res) => {
-                  if (!res.ok) return null;
-                  return res.json();
-                })
+            const allIds = feedIdsData.feedid;
+            setRawFeedIds(allIds);
+
+            // Lazy load: Fetch details for only the first batch (12 items)
+            const initialBatch = allIds.slice(0, BATCH_SIZE);
+            const initialFeeds = await fetchFeedDetailsBatch(
+              initialBatch,
+              token,
+              profileData.nickname
             );
-
-            const feedDetailsResponses = await Promise.all(
-              feedDetailsPromises
-            );
-
-            const validFeeds = feedDetailsResponses
-              .filter(
-                (response) =>
-                  response && response.result === "success" && response.feed
-              )
-              .map((response) => response.feed);
-
-            const feedsWithNickname = validFeeds.map((feed: FeedItem) => ({
-              ...feed,
-              nickname: profileData.nickname,
-            }));
-
-            setFeeds(feedsWithNickname);
+            setFeeds(initialFeeds);
           } else {
+            setRawFeedIds([]);
             setFeeds([]);
           }
         } else {
+          setRawFeedIds([]);
           setFeeds([]);
         }
 
@@ -245,7 +281,62 @@ export default function UserProfilePage() {
     };
 
     fetchProfileData();
-  }, [uid, token, isMyProfile, API_URL]);
+  }, [uid, token, isMyProfile, API_URL, fetchFeedDetailsBatch]);
+
+  // Load more feeds handler for pagination / lazy loading
+  const handleLoadMore = useCallback(async () => {
+    if (
+      loadingMore ||
+      feeds.length >= rawFeedIds.length ||
+      !token ||
+      !profile
+    )
+      return;
+
+    setLoadingMore(true);
+    const nextStartIndex = feeds.length;
+    const nextBatchIds = rawFeedIds.slice(
+      nextStartIndex,
+      nextStartIndex + BATCH_SIZE
+    );
+
+    const newFeeds = await fetchFeedDetailsBatch(
+      nextBatchIds,
+      token,
+      profile.nickname
+    );
+
+    setFeeds((prev) => [...prev, ...newFeeds]);
+    setLoadingMore(false);
+  }, [
+    loadingMore,
+    feeds.length,
+    rawFeedIds,
+    token,
+    profile,
+    fetchFeedDetailsBatch,
+  ]);
+
+  // Infinite scroll intersection observer for bottom sentinel
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          handleLoadMore();
+        }
+      },
+      { rootMargin: "300px" }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [handleLoadMore]);
 
   const handleFollow = async () => {
     if (!token || !uid) return;
@@ -374,7 +465,7 @@ export default function UserProfilePage() {
             <div className="flex justify-center sm:justify-start gap-6 text-sm text-gray-400">
               <div>
                 게시물{" "}
-                <span className="font-bold text-white ml-1">{feeds.length}</span>
+                <span className="font-bold text-white ml-1">{rawFeedIds.length}</span>
               </div>
               <div>
                 팔로워{" "}
@@ -403,7 +494,7 @@ export default function UserProfilePage() {
         {/* Feed Image Grid Header */}
         <div className="border-t border-gray-800 pt-6">
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
-            Posts ({imageFeeds.length})
+            Posts ({rawFeedIds.length})
           </h2>
 
           {imageFeeds.length > 0 ? (
@@ -419,6 +510,21 @@ export default function UserProfilePage() {
           ) : (
             <div className="bg-gray-900/50 border border-gray-800/80 rounded-2xl p-12 text-center text-sm text-gray-500">
               No posts found for this profile.
+            </div>
+          )}
+
+          {/* Sentinel element for infinite scrolling / lazy loading */}
+          {feeds.length < rawFeedIds.length && (
+            <div
+              ref={sentinelRef}
+              className="py-6 flex justify-center items-center"
+            >
+              {loadingMore && (
+                <div className="flex items-center gap-2 text-xs text-gray-400">
+                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <span>Loading more posts...</span>
+                </div>
+              )}
             </div>
           )}
         </div>
