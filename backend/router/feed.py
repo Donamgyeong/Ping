@@ -108,19 +108,17 @@ async def get_feed_by_location(
     user = await validate_token(token, db)
     try:
         if geohash.hashes and len(geohash.hashes[0]) <= 5:
-            raw_counts = await get_feeds_count_by_hash(db, redis, geohash.hashes)
-            count_list = list[FeedCountInfo]()
-            for row in raw_counts:
-                if row.feed_count and row.feed_count > 0 and row.center_point:
-                    geojson = json.loads(row.center_point)
-                    coords = geojson.get("coordinates")
-                    if coords and len(coords) >= 2:
-                        count_info = FeedCountInfo(
-                            count=row.feed_count,
-                            location=Location(long=coords[0], lat=coords[1]),
-                        )
-                        count_list.append(count_info)
-            return ResponseFeedCount(result="success", count=count_list)
+            count_list = await get_feeds_count_by_hash(db, redis, geohash.hashes)
+            result = list(
+                map(
+                    lambda x: FeedCountInfo(
+                        count=x[0],
+                        location=Location(long=float(x[1][1]), lat=float(x[1][0])),
+                    ),
+                    count_list,
+                )
+            )
+            return ResponseFeedCount(result="success", count=result)
         else:
             feeds = await get_feeds_by_hash(db, redis, geohash.hashes)
             result = list[FeedLocation]()

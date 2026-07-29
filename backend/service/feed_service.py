@@ -10,6 +10,7 @@ from geoalchemy2.functions import (
     ST_Collect,
     ST_Centroid,
     ST_AsGeoJSON,
+    ST_GeoHash,
 )
 from geoalchemy2.shape import from_shape
 from redis.asyncio import Redis
@@ -18,8 +19,9 @@ from fastapi import HTTPException, status
 from library.schema import *
 from library.model import *
 from uuid import uuid4
-from datetime import datetime, timezone
+from datetime import datetime, timezone, time
 import geohash2
+import json
 
 
 async def create_feed(db: AsyncSession, uid: str, feed: FeedCreate) -> str:
@@ -106,20 +108,45 @@ async def get_feeds_by_hash(
 
 async def get_feeds_count_by_hash(
     db: AsyncSession, redis: Redis, hashes: list[str]
-) -> list:
+) -> list[tuple]:
     counts = []
+    query_list = []
+
+    start = datetime.now()
+
     for hash in hashes:
-        stmt = select(
-            ST_NumGeometries(ST_Collect(Feed.location)).label("feed_count"),
+        count = await redis.get("feed:count:" + hash)
+        if count:
+            counts.append((int(count), geohash2.decode_exactly(hash)))
+        else:
+            query_list.append(hash)
+
+    if len(query_list) == 0:
+        print("------------from cache-----------")
+        return counts
+
+    precision = len(query_list[0])
+    geohashes = ST_GeoHash(Feed.location, precision).label("geohash")
+    stmt = (
+        select(
+            geohashes,
+            func.count(Feed.feed_id).label("feed_count"),
             ST_AsGeoJSON(ST_Centroid(ST_Collect(Feed.location))).label("center_point"),
-        ).where(
-            ST_Contains(
-                ST_SetSRID(ST_GeomFromGeoHash(hash), 4326),
-                Feed.location,
-            )
         )
-        result = await db.execute(stmt)
-        counts.extend(result.all())
+        .where(geohashes.in_(query_list))
+        .group_by(geohashes)
+    )
+
+    result = await db.execute(stmt)
+    for row in result.all():
+        geojson = json.loads(row.center_point)
+        coords = geojson.get("coordinates")
+        counts.append((row.feed_count, (coords[0], coords[1])))
+
+        await redis.set("feed:count:" + row.geohash, row.feed_count)
+        await redis.expire("feed:count:" + row.geohash, 1800)
+
+    print("-------------" + str((datetime.now() - start).microseconds))
 
     return counts
 
