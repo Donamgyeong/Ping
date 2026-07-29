@@ -19,7 +19,8 @@ from fastapi import HTTPException, status
 from library.schema import *
 from library.model import *
 from uuid import uuid4
-from datetime import datetime, timezone, time
+from datetime import datetime, timezone
+import time
 import geohash2
 import json
 
@@ -85,25 +86,46 @@ async def get_feeds_by_position(
 
 async def get_feeds_by_hash(
     db: AsyncSession, redis: Redis, hashes: list[str]
-) -> list[Feed]:
+) -> list[dict]:
     if not hashes:
         return []
 
-    redis.set("", "")
-
-    conditions = []
+    key = "feed:rate:" + get_current_time_bucket(10)
+    feeds = []
     for hash in hashes:
-        geohash2.decode(hash)
-        conditions.append(
-            ST_Contains(
-                ST_SetSRID(ST_GeomFromGeoHash(hash), 4326),
-                Feed.location,
+        feed = await redis.get("feed:cached:" + hash)
+        if feed:
+            print("------------from cache-----------")
+            data = json.loads(feed)
+            feeds.extend(data)
+        else:
+            stmt = select(Feed).where(
+                ST_Contains(
+                    ST_SetSRID(ST_GeomFromGeoHash(hash), 4326),
+                    Feed.location,
+                )
             )
-        )
+            result = await db.scalars(stmt)
+            feed_list = list(map(lambda x: x.as_dict(), result.all()))
 
-    stmt = select(Feed).where(or_(*conditions))
-    result = await db.scalars(stmt)
-    return list(result.all())
+            score = await redis.zscore(key, hash)
+            if not score:
+                await redis.zadd(key, {hash: 1})
+                await redis.expire(key, 900)
+                continue
+            else:
+                await redis.zincrby(key, 1, hash)
+
+            if score > 30:
+                await redis.set(
+                    "feed:cached:" + hash,
+                    json.dumps(feed_list, default=datetime_to_json_formatting),
+                )
+                await redis.expire("feed:cached:" + hash, 60)
+
+            feeds.extend(feed_list)
+
+    return feeds
 
 
 async def get_feeds_count_by_hash(
@@ -178,3 +200,14 @@ async def update_feed(db: AsyncSession, uid: str, feed: FeedUpdate):
     )
 
     await db.execute(stmt)
+
+
+def get_current_time_bucket(interval_minutes: int = 10) -> str:
+    current_time = int(time.time())
+    bucket_timestamp = current_time - (current_time % (interval_minutes * 60))
+    return str(bucket_timestamp)
+
+
+def datetime_to_json_formatting(o):
+    if isinstance(o, (date, datetime)):
+        return o.isoformat()

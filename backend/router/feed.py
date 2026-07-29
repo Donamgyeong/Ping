@@ -23,6 +23,7 @@ from library.redis import get_redis
 from redis.asyncio import Redis
 import json
 import logging
+import traceback
 
 router = APIRouter(prefix="/feed", tags=["feed"])
 
@@ -126,17 +127,19 @@ async def get_feed_by_location(
             following_list = await get_following(db, user.uid)
             following_uids = map(lambda x: x.uid, following_list)
             for feed in feeds:
+                print(feed)
                 if (
-                    feed.uid in following_uids
-                    or not feed.private
-                    or feed.uid == user.uid
+                    feed["uid"] in following_uids
+                    or not feed["private"]
+                    or feed["uid"] == user.uid
                 ):
-                    point = to_shape(feed.location)
                     feedID = FeedLocation(
-                        fid=feed.feed_id,
-                        uid=feed.uid,
-                        post_date=feed.post_date,
-                        location=Location(long=point.x, lat=point.y),
+                        fid=feed["feed_id"],
+                        uid=feed["uid"],
+                        post_date=feed["post_date"],
+                        location=Location(
+                            long=feed["location"]["lng"], lat=feed["location"]["lat"]
+                        ),
                     )
                     result.append(feedID)
             return ResponseFeedLocation(result="success", feeds=result)
@@ -144,6 +147,7 @@ async def get_feed_by_location(
         raise e
     except Exception as e:
         logging.error(f"Error getting feeds by location: {e}")
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -203,7 +207,7 @@ async def get_feed(
                 detail="Not authorized to access this feed",
             )
 
-        point = to_shape(feed.location)
+        point = to_shape(feed.location).point_on_surface()
 
         image_list = await get_image_list(db, fid)
         feedItem = FeedItem(

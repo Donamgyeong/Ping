@@ -1,7 +1,8 @@
 from typing import List, Optional
 from sqlalchemy.orm import Mapped, mapped_column, DeclarativeBase, relationship
 from sqlalchemy import ForeignKey, String, Date, DateTime, Boolean, Text, Index
-from geoalchemy2 import Geometry
+from geoalchemy2 import Geometry, WKBElement
+from geoalchemy2.shape import from_shape, to_shape
 from datetime import date, datetime
 
 
@@ -78,6 +79,16 @@ class Feed(Base):
         Index("idx_location", "location"),
         Index("idx_post_date", "post_date"),
     )
+
+    def as_dict(self):
+        result = {}
+        for c in self.__table__.columns:
+            if isinstance(getattr(self, c.name), WKBElement):
+                point = to_shape(getattr(self, c.name)).point_on_surface()
+                result[c.name] = {"lng": point.x, "lat": point.y}
+            else:
+                result[c.name] = getattr(self, c.name)
+        return result
 
 
 class FeedImage(Base):

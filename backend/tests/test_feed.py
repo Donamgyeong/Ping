@@ -118,7 +118,7 @@ async def auth_headers(test_user_data):
 def feed_payload():
     return {
         "content": "This is a test feed.",
-        "location": {"long": 127.0, "lat": 37.5},
+        "location": {"long": 127.0637125537546, "lat": 37.6602722815154},
         "images": [],  # 이미지 파일 ID 리스트 (테스트에서는 비워둠)
         "private": False,
     }
@@ -235,7 +235,7 @@ async def test_get_feed_by_location(db_session, auth_headers, feed_payload):
 
     long = feed_payload["location"]["long"]
     lat = feed_payload["location"]["lat"]
-    gh = geohash2.encode(lat, long, 6)
+    gh = geohash2.encode(lat, long, 7)
 
     response = client.post(
         "/feed/get/location",
@@ -272,3 +272,77 @@ async def test_feed_authorization(
     # 3. 다른 사용자가 비공개 피드 조회 시도 (403 Forbidden)
     get_response = client.get(f"/feed/get/{fid}", headers=other_headers)
     assert get_response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_geohash_cache_performance_via_api(db_session, auth_headers):
+    """
+    사용자 생성(/user/join), 로그인(/auth/token), 피드 생성(/feed/new) 및 위치 기반 피드 조회(/feed/get/location)를
+    모두 API 경로 요청으로 수행하며, 동일 geohash 구역 30회 초과 조회 시 Redis 캐싱 전/후 실행 시간 차이를 비교합니다.
+    """
+    import time
+    import geohash2
+
+    # 3. 피드 생성 API 요청 (/feed/new)
+    feed_payload = {
+        "content": "API Geohash Cache Performance Test Feed",
+        "location": {"long": 127.0, "lat": 37.5},
+        "images": [],
+        "private": False,
+    }
+    create_feed_res = client.post("/feed/new", headers=auth_headers, json=feed_payload)
+    assert create_feed_res.status_code == 200
+    assert create_feed_res.json()["result"] == "success"
+
+    # 4. Geohash 인코딩 및 위치 조회 요청 데이터 준비
+    long = feed_payload["location"]["long"]
+    lat = feed_payload["location"]["lat"]
+    gh = geohash2.encode(lat, long, 6)
+    location_payload = {"hashes": [gh]}
+
+    # 5. 캐싱 전 (DB 쿼리 실행) 1번째 API 조회 소요 시간 측정
+    start_uncached = time.perf_counter()
+    uncached_response = client.post(
+        "/feed/get/location", json=location_payload, headers=auth_headers
+    )
+    uncached_duration = (time.perf_counter() - start_uncached) * 1000  # ms 단위
+
+    assert uncached_response.status_code == 200
+    assert len(uncached_response.json()["feeds"]) > 0
+
+    # 6. Redis 캐싱 조건(score > 30) 충족을 위해 32회 추가 연속 조회 API 요청
+    for _ in range(32):
+        res = client.post(
+            "/feed/get/location", json=location_payload, headers=auth_headers
+        )
+        assert res.status_code == 200
+
+    # 7. 캐싱 후 (Redis 캐시 조회) API 조회 소요 시간 측정
+    start_cached = time.perf_counter()
+    cached_response = client.post(
+        "/feed/get/location", json=location_payload, headers=auth_headers
+    )
+    cached_duration = (time.perf_counter() - start_cached) * 1000  # ms 단위
+
+    assert cached_response.status_code == 200
+
+    # 8. 쿼리 실행 시간 비교 결과 출력 및 검증
+    print(
+        "\n================ [API Path Geohash Cache Performance Result] ================"
+    )
+    print(f" - Uncached (DB Query via API) Execution Time : {uncached_duration:.4f} ms")
+    print(f" - Cached (Redis Cache via API) Execution Time: {cached_duration:.4f} ms")
+    print(
+        f" - Time Saved                                 : {uncached_duration - cached_duration:.4f} ms"
+    )
+    if cached_duration > 0:
+        print(
+            f" - Performance Improvement            : {uncached_duration / cached_duration:.2f}x faster"
+        )
+    print(
+        "============================================================================"
+    )
+
+    # 데이터 동일성 및 실행 시간 단축 검증
+    assert uncached_response.json()["feeds"] == cached_response.json()["feeds"]
+    assert cached_duration < uncached_duration
