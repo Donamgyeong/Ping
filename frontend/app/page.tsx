@@ -8,6 +8,7 @@ import FeedList from "./components/FeedList";
 import FeedDetail from "./components/FeedDetail";
 import { MapViewInfo } from "./components/Map";
 import { getGeohashesForBounds } from "@/utils/geohash";
+import { fetchSingleFeedDetailCached } from "@/utils/feedCache";
 import {
   Radio,
   ArrowRight,
@@ -81,37 +82,10 @@ export default function Home() {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-  // Helper to fetch single feed detail
+  // Helper to fetch single feed detail with frontend caching
   const fetchSingleFeedDetail = useCallback(
     async (fid: string, authToken: string): Promise<FeedItem | null> => {
-      try {
-        const response = await fetch(`${API_URL}/feed/get/${fid}`, {
-          headers: { Authorization: `Bearer ${authToken}` },
-        });
-        if (!response.ok) return null;
-        const data = await response.json();
-        if (data.result === "success" && data.feed) {
-          const feed: FeedItem = data.feed;
-          try {
-            const userResponse = await fetch(
-              `${API_URL}/user/profile/${feed.uid}`,
-              {
-                headers: { Authorization: `Bearer ${authToken}` },
-              }
-            );
-            if (userResponse.ok) {
-              const userData = await userResponse.json();
-              feed.nickname = userData.nickname;
-            }
-          } catch (e) {
-            // Ignore profile fetch error
-          }
-          return feed;
-        }
-      } catch (e) {
-        console.error(`Failed to load detail for feed ${fid}:`, e);
-      }
-      return null;
+      return fetchSingleFeedDetailCached(fid, authToken, API_URL);
     },
     [API_URL]
   );
@@ -271,7 +245,11 @@ export default function Home() {
       return updated;
     });
 
-    setListFeeds((prev) => [...prev, ...newFeeds]);
+    setListFeeds((prev) => {
+      const existingFids = new Set(prev.map((item) => item.fid));
+      const uniqueNewFeeds = newFeeds.filter((item) => !existingFids.has(item.fid));
+      return [...prev, ...uniqueNewFeeds];
+    });
     setLoadingMore(false);
   }, [
     loadingMore,

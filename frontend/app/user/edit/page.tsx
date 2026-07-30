@@ -84,7 +84,7 @@ export default function EditProfilePage() {
             if (data.profile_picture) {
               setProfilePictureId(data.profile_picture);
               // Fetch avatar image
-              fetch(`${API_URL}/file/get/${data.profile_picture}`, {
+              fetch(`${API_URL}/file/get/${data.profile_picture}?thumbnail=true`, {
                 headers: { Authorization: `Bearer ${token}` },
               })
                 .then((res) => (res.ok ? res.blob() : null))

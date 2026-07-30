@@ -13,6 +13,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { formatLocalDate } from "@/utils/date";
 import { useAuth } from "@/hooks/useAuth";
+import { fetchSingleFeedDetailCached } from "@/utils/feedCache";
 import { MapPin } from "lucide-react";
 
 const setupLeafletIcons = () => {
@@ -178,32 +179,17 @@ const FeedMarker = ({ feed }: { feed: FeedItem }) => {
 
     let targetFeed = currentFeed;
 
-    // If detail content is empty, fetch feed detail first
+    // If detail content is empty, fetch feed detail first with cache
     if (!targetFeed.content) {
       try {
-        const response = await fetch(`${API_URL}/feed/get/${feed.fid}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (response.ok) {
-          const data = await response.json();
-          if (data.result === "success" && data.feed) {
-            targetFeed = data.feed;
-            try {
-              const userRes = await fetch(
-                `${API_URL}/user/profile/${targetFeed.uid}`,
-                {
-                  headers: { Authorization: `Bearer ${token}` },
-                }
-              );
-              if (userRes.ok) {
-                const userData = await userRes.json();
-                targetFeed.nickname = userData.nickname;
-              }
-            } catch (e) {
-              // Ignore profile fetch error
-            }
-            setCurrentFeed(targetFeed);
-          }
+        const detailed = await fetchSingleFeedDetailCached(
+          feed.fid,
+          token,
+          API_URL
+        );
+        if (detailed) {
+          targetFeed = detailed;
+          setCurrentFeed(detailed);
         }
       } catch (err) {
         console.error("Failed to load marker feed detail on hover:", err);
@@ -215,7 +201,7 @@ const FeedMarker = ({ feed }: { feed: FeedItem }) => {
       setLoadingImage(true);
       try {
         const response = await fetch(
-          `${API_URL}/file/get/${targetFeed.images[0]}`,
+          `${API_URL}/file/get/${targetFeed.images[0]}?thumbnail=true`,
           {
             headers: { Authorization: `Bearer ${token}` },
           }

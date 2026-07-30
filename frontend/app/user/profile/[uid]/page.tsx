@@ -83,7 +83,7 @@ const FeedImageTile = memo(function FeedImageTile({
       if (feed.images && feed.images.length > 0 && token) {
         try {
           const response = await fetch(
-            `${API_URL}/file/get/${feed.images[0]}`,
+            `${API_URL}/file/get/${feed.images[0]}?thumbnail=true`,
             {
               headers: { Authorization: `Bearer ${token}` },
             }
@@ -207,7 +207,7 @@ export default function UserProfilePage() {
         setProfile(profileData);
 
         if (profileData.profile_picture) {
-          fetch(`${API_URL}/file/get/${profileData.profile_picture}`, {
+          fetch(`${API_URL}/file/get/${profileData.profile_picture}?thumbnail=true`, {
             headers: { Authorization: `Bearer ${token}` },
           })
             .then((res) => (res.ok ? res.blob() : null))
@@ -306,7 +306,11 @@ export default function UserProfilePage() {
       profile.nickname
     );
 
-    setFeeds((prev) => [...prev, ...newFeeds]);
+    setFeeds((prev) => {
+      const existingFids = new Set(prev.map((item) => item.fid));
+      const uniqueNewFeeds = newFeeds.filter((item) => !existingFids.has(item.fid));
+      return [...prev, ...uniqueNewFeeds];
+    });
     setLoadingMore(false);
   }, [
     loadingMore,

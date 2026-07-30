@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import FeedDetail from '@/app/components/FeedDetail';
+import { fetchSingleFeedDetailCached } from '@/utils/feedCache';
 
 interface FeedItem {
   fid: string;
@@ -47,27 +48,9 @@ export default function FeedPage() {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`${API_URL}/feed/get/${fid}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || 'Failed to fetch feed details.');
-        }
-
-        const data = await response.json();
-        if (data.result === 'success' && data.feed) {
-            const feedData = data.feed;
-            // Fetch nickname
-            const userResponse = await fetch(`${API_URL}/user/profile/${feedData.uid}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (userResponse.ok) {
-                const userData = await userResponse.json();
-                feedData.nickname = userData.nickname;
-            }
-            setFeed(feedData);
+        const feedData = await fetchSingleFeedDetailCached(fid, token, API_URL);
+        if (feedData) {
+          setFeed(feedData);
         } else {
           throw new Error('Feed not found.');
         }

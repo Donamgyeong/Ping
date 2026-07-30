@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { formatLocalDate } from "@/utils/date";
 import { User } from "lucide-react";
@@ -33,6 +34,15 @@ export default function ProfileFeedList({
 }: FeedListProps) {
   const router = useRouter();
 
+  const uniqueFeeds = useMemo(() => {
+    const seen = new Set<string>();
+    return feeds.filter((feed) => {
+      if (!feed || !feed.fid || seen.has(feed.fid)) return false;
+      seen.add(feed.fid);
+      return true;
+    });
+  }, [feeds]);
+
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
       {title && (
@@ -40,9 +50,9 @@ export default function ProfileFeedList({
           <h2 className="text-base font-bold text-white">{title}</h2>
         </div>
       )}
-      {feeds.length > 0 ? (
+      {uniqueFeeds.length > 0 ? (
         <div className="divide-y divide-gray-800/60 p-2 space-y-1">
-          {feeds.map((feed) => (
+          {uniqueFeeds.map((feed) => (
             <div
               key={feed.fid}
               onClick={() => onFeedItemClick(feed)}

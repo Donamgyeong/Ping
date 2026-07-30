@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { formatLocalDate } from "@/utils/date";
 import { Plus, User, MapPin, Loader2 } from "lucide-react";
@@ -45,6 +45,15 @@ export default function FeedList({
   const router = useRouter();
   const observerRef = useRef<HTMLDivElement | null>(null);
 
+  const uniqueFeeds = useMemo(() => {
+    const seen = new Set<string>();
+    return feeds.filter((feed) => {
+      if (!feed || !feed.fid || seen.has(feed.fid)) return false;
+      seen.add(feed.fid);
+      return true;
+    });
+  }, [feeds]);
+
   const handleCreateFeedClick = () => {
     router.push("/feed/new");
   };
@@ -73,7 +82,7 @@ export default function FeedList({
     };
   }, [hasMore, loadingMore, onLoadMore]);
 
-  const displayCount = totalCount !== undefined ? totalCount : feeds.length;
+  const displayCount = totalCount !== undefined ? totalCount : uniqueFeeds.length;
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl m-2">
@@ -89,9 +98,9 @@ export default function FeedList({
         </div>
       )}
 
-      {feeds.length > 0 ? (
+      {uniqueFeeds.length > 0 ? (
         <div className="divide-y divide-gray-800/60 max-h-[calc(100vh-14rem)] overflow-y-auto p-2 space-y-1">
-          {feeds.map((feed) => (
+          {uniqueFeeds.map((feed) => (
             <div
               key={feed.fid}
               onClick={() => onFeedItemClick(feed)}
