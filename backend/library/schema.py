@@ -165,3 +165,25 @@ class ChatMessage(Base):
     )
     content: Mapped[str] = mapped_column(Text)
     message_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class EMD_Boundaries(Base):
+    __tablename__ = "emd_boundaries"
+
+    emd_cd: Mapped[str] = mapped_column(String(10), primary_key=True)
+    emd_nm: Mapped[str] = mapped_column(String(100), nullable=False)
+    geom: Mapped[Geometry] = mapped_column(Geometry("MULTIPOLYGON", srid=4326))
+
+
+class SIDO(Base):
+    __tablename__ = "sido"
+
+    sido_cd: Mapped[str] = mapped_column(String(2), primary_key=True)
+    sido_nm: Mapped[str] = mapped_column(String(100), nullable=False)
+
+
+class SIGUNGU(Base):
+    __tablename__ = "sigungu"
+
+    sigungu_cd: Mapped[str] = mapped_column(String(5), primary_key=True)
+    sigungu_nm: Mapped[str] = mapped_column(String(100), nullable=False)

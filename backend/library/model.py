@@ -2,8 +2,8 @@ from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
 
 
-class GeoHash(BaseModel):
-    hashes: list[str]
+class HJD(BaseModel):
+    codes: list[str]
 
 
 class Location(BaseModel):

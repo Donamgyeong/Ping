@@ -26,6 +26,9 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+.venv/
+extracted/
+geodata/data/*.zip
 
 # PyInstaller
 #   Usually these files are written by a python script from a template
@@ -285,3 +288,4 @@ yarn-error.log*
 next-env.d.ts
 
 .next
+geodata/geodata.geojson

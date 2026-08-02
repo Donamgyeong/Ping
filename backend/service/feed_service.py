@@ -75,13 +75,102 @@ async def get_feeds_by_uid(db: AsyncSession, uid: str) -> list[Feed]:
 
 
 async def get_feeds_by_position(
-    db: AsyncSession, long: float, lat: float, radius: int
+    db: AsyncSession, redis: Redis, hjd_cds: list[str]
 ) -> list[Feed]:
-    point = from_shape(Point(long, lat), srid=4326)
-    stmt = select(Feed).where(func.ST_DWithin(Feed.location, point, radius / 110000))
-    result = await db.scalars(stmt)
+    key = "feed:rate:" + get_current_time_bucket(10)
+    feeds = []
+    for hjd in hjd_cds:
+        feed = await redis.get("feed:cached:" + hjd)
+        if feed:
+            print("------------from cache-----------")
+            data = json.loads(feed)
+            feeds.extend(data)
+        else:
+            stmt = select(Feed).where(
+                EMD_Boundaries.emd_cd == hjd,
+                ST_Contains(
+                    EMD_Boundaries.geom,
+                    Feed.location,
+                ),
+            )
+            result = await db.scalars(stmt)
+            feed_list = list(map(lambda x: x.as_dict(), result.all()))
 
-    return list(result.all())
+            score = await redis.zscore(key, hjd)
+            if not score:
+                await redis.zadd(key, {hjd: 1})
+                await redis.expire(key, 900)
+                continue
+            else:
+                await redis.zincrby(key, 1, hjd)
+
+            if score > 30:
+                await redis.set(
+                    "feed:cached:" + hjd,
+                    json.dumps(feed_list, default=datetime_to_json_formatting),
+                )
+                await redis.expire("feed:cached:" + hjd, 60)
+
+            feeds.extend(feed_list)
+
+    return feeds
+<<<<<<< HEAD
+
+
+async def get_feeds_count_by_codes(
+    db: AsyncSession, redis: Redis, hjds: list[str]
+) -> list[tuple]:
+    counts = []
+    query_list = []
+
+    for code in hjds:
+        count = await redis.get("feed:count:" + code)
+        if count:
+            geojson = await redis.get("feed:location:" + code)
+            if geojson:
+                coords = json.loads(geojson)
+                counts.append((int(count), (coords["lng"], coords["lat"])))
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Internal Server Error",
+                )
+        else:
+            query_list.append(code)
+
+    if len(query_list) == 0:
+        print("------------from cache-----------")
+        return counts
+
+    stmt = (
+        select(
+            EMD_Boundaries.emd_cd.label("code"),
+            func.count(Feed.feed_id).label("feed_count"),
+            ST_AsGeoJSON(ST_Centroid(EMD_Boundaries.geom)).label("center_point"),
+        )
+        .where(
+            ST_Contains(EMD_Boundaries.geom, Feed.location),
+            EMD_Boundaries.emd_cd.in_(query_list),
+        )
+        .group_by(EMD_Boundaries.emd_cd)
+    )
+
+    result = await db.execute(stmt)
+    for row in result.all():
+        geojson = json.loads(row.center_point)
+        coords = geojson.get("coordinates")
+        counts.append((row.feed_count, (coords[0], coords[1])))
+
+        await redis.set("feed:count:" + row.code, row.feed_count)
+        await redis.set(
+            "feed:location:" + row.code,
+            json.dumps({"lng": coords[0], "lat": coords[1]}),
+        )
+        await redis.expire("feed:count:" + row.code, 1800)
+
+    return counts
+=======
+>>>>>>> 54dc0c2b619392575af067d754703c2250b3bb4a
 
 
 async def get_feeds_by_hash(
@@ -200,6 +289,17 @@ async def update_feed(db: AsyncSession, uid: str, feed: FeedUpdate):
     )
 
     await db.execute(stmt)
+
+
+async def get_address_from_position(
+    db: AsyncSession, lat: float, long: float
+) -> str | None:
+    point = from_shape(Point(long, lat), srid=4326)
+    stmt = select(EMD_Boundaries.emd_cd).where(ST_Contains(EMD_Boundaries.geom, point))
+    result = await db.execute(stmt)
+    emd_cd = result.scalar_one_or_none()
+
+    return emd_cd
 
 
 def get_current_time_bucket(interval_minutes: int = 10) -> str:
