@@ -114,7 +114,6 @@ async def get_feeds_by_position(
             feeds.extend(feed_list)
 
     return feeds
-<<<<<<< HEAD
 
 
 async def get_feeds_count_by_codes(
@@ -169,8 +168,6 @@ async def get_feeds_count_by_codes(
         await redis.expire("feed:count:" + row.code, 1800)
 
     return counts
-=======
->>>>>>> 54dc0c2b619392575af067d754703c2250b3bb4a
 
 
 async def get_feeds_by_hash(
