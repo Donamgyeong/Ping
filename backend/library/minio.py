@@ -11,6 +11,15 @@ client = Minio(
 )
 
 
+async def minio_init():
+    if not client.bucket_exists(settings.s3_bucket):
+        client.make_bucket(settings.s3_bucket)
+    if not client.bucket_exists(settings.s3_cache_bucket):
+        client.make_bucket(settings.s3_cache_bucket)
+    if not client.bucket_exists(settings.s3_geo_bucket):
+        client.make_bucket(settings.s3_geo_bucket)
+
+
 async def upload_to_minio(
     bucket: str,
     object_name: str,
@@ -19,11 +28,6 @@ async def upload_to_minio(
     content_type: str,
 ):
     def _upload():
-        if not client.bucket_exists(settings.s3_bucket):
-            client.make_bucket(settings.s3_bucket)
-        if not client.bucket_exists(settings.s3_cache_bucket):
-            client.make_bucket(settings.s3_cache_bucket)
-
         client.put_object(
             bucket_name=bucket,
             object_name=object_name,

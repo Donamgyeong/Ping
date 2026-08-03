@@ -7,7 +7,6 @@ import Link from "next/link";
 import FeedList from "./components/FeedList";
 import FeedDetail from "./components/FeedDetail";
 import { MapViewInfo } from "./components/Map";
-import { getGeohashesForBounds } from "@/utils/geohash";
 import { fetchSingleFeedDetailCached } from "@/utils/feedCache";
 import {
   Radio,
@@ -17,6 +16,17 @@ import {
   List,
   Columns,
 } from "lucide-react";
+
+interface BBoxPayload {
+  SW: {
+    lat: number;
+    long: number;
+  };
+  NE: {
+    lat: number;
+    long: number;
+  };
+}
 
 interface FeedLocationItem {
   fid: string;
@@ -78,7 +88,7 @@ export default function Home() {
     "split"
   );
   const mapMoveTimeout = useRef<NodeJS.Timeout | null>(null);
-  const lastFetchedHashesRef = useRef<string>("");
+  const lastFetchedBBoxRef = useRef<string>("");
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -105,10 +115,9 @@ export default function Home() {
     [fetchSingleFeedDetail]
   );
 
-  // Helper to fetch feeds by geohash list
-  const fetchFeedsByHashes = useCallback(
-    async (geohashes: string[], authToken: string) => {
-      if (geohashes.length === 0) return;
+  // Helper to fetch feeds by Bounding Box (SW & NE)
+  const fetchFeedsByBBox = useCallback(
+    async (bbox: BBoxPayload, authToken: string) => {
       setError(null);
       try {
         const feedIdsResponse = await fetch(`${API_URL}/feed/get/location`, {
@@ -117,7 +126,7 @@ export default function Home() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${authToken}`,
           },
-          body: JSON.stringify({ hashes: geohashes }),
+          body: JSON.stringify(bbox),
         });
 
         if (!feedIdsResponse.ok) {
@@ -208,20 +217,23 @@ export default function Home() {
     if (isLoggedIn && location && token) {
       const latDelta = 0.03;
       const lngDelta = 0.03;
-      const initialBounds = {
-        south: location.latitude - latDelta,
-        north: location.latitude + latDelta,
-        west: location.longitude - lngDelta,
-        east: location.longitude + lngDelta,
+      const initialBBox: BBoxPayload = {
+        SW: {
+          lat: location.latitude - latDelta,
+          long: location.longitude - lngDelta,
+        },
+        NE: {
+          lat: location.latitude + latDelta,
+          long: location.longitude + lngDelta,
+        },
       };
-      const initialGeohashes = getGeohashesForBounds(initialBounds, 13);
-      const hashKey = initialGeohashes.slice().sort().join(",");
-      if (lastFetchedHashesRef.current === "") {
-        lastFetchedHashesRef.current = hashKey;
-        fetchFeedsByHashes(initialGeohashes, token);
+      const bboxKey = `${initialBBox.SW.lat.toFixed(4)},${initialBBox.SW.long.toFixed(4)},${initialBBox.NE.lat.toFixed(4)},${initialBBox.NE.long.toFixed(4)}`;
+      if (lastFetchedBBoxRef.current === "") {
+        lastFetchedBBoxRef.current = bboxKey;
+        fetchFeedsByBBox(initialBBox, token);
       }
     }
-  }, [isLoggedIn, location, token, fetchFeedsByHashes]);
+  }, [isLoggedIn, location, token, fetchFeedsByBBox]);
 
   // Lazy loading handler when scrolling down in FeedList
   const handleLoadMore = useCallback(async () => {
@@ -304,22 +316,31 @@ export default function Home() {
       }
 
       mapMoveTimeout.current = setTimeout(() => {
-        const geohashes = getGeohashesForBounds(viewInfo.bounds, viewInfo.zoom);
-        const hashKey = geohashes.slice().sort().join(",");
+        const bbox: BBoxPayload = {
+          SW: {
+            lat: viewInfo.bounds.south,
+            long: viewInfo.bounds.west,
+          },
+          NE: {
+            lat: viewInfo.bounds.north,
+            long: viewInfo.bounds.east,
+          },
+        };
+        const bboxKey = `${bbox.SW.lat.toFixed(4)},${bbox.SW.long.toFixed(4)},${bbox.NE.lat.toFixed(4)},${bbox.NE.long.toFixed(4)}`;
 
-        if (hashKey === lastFetchedHashesRef.current) {
+        if (bboxKey === lastFetchedBBoxRef.current) {
           return;
         }
 
-        lastFetchedHashesRef.current = hashKey;
+        lastFetchedBBoxRef.current = bboxKey;
         setLocation({
           latitude: viewInfo.center.latitude,
           longitude: viewInfo.center.longitude,
         });
-        fetchFeedsByHashes(geohashes, token);
+        fetchFeedsByBBox(bbox, token);
       }, 400);
     },
-    [token, fetchFeedsByHashes]
+    [token, fetchFeedsByBBox]
   );
 
   const handleBackToFeedList = () => {

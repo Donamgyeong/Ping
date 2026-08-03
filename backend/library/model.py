@@ -2,13 +2,14 @@ from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
 
 
-class HJD(BaseModel):
-    codes: list[str]
-
-
 class Location(BaseModel):
-    long: float
     lat: float
+    long: float
+
+
+class BBox(BaseModel):
+    SW: Location
+    NE: Location
 
 
 class FeedCountInfo(BaseModel):

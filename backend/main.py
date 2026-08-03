@@ -28,3 +28,10 @@ app.include_router(chat_router)
 app.include_router(file_router)
 app.include_router(auth_router)
 app.include_router(comment_router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    from library.minio import minio_init
+
+    await minio_init()

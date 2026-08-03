@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     s3_secret_key: str = Field(..., validation_alias="S3_SECRET_KEY")
     s3_bucket: str = Field(..., validation_alias="S3_BUCKET")
     s3_cache_bucket: str = Field(..., validation_alias="S3_CACHE_BUCKET")
+    s3_geo_bucket: str = Field(..., validation_alias="S3_GEO_BUCKET")
     redis_host: str = Field(..., validation_alias="REDIS_HOST")
     redis_pass: str = Field(..., validation_alias="REDIS_PASS")
     redis_port: int = Field(..., validation_alias="REDIS_PORT")

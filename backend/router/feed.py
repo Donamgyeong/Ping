@@ -7,11 +7,11 @@ from library.schema import Feed
 from service.feed_service import (
     create_feed,
     get_feeds_count_by_codes,
+    get_hjd_from_bbox,
     update_feed,
     delete_feed,
     get_feeds_by_uid,
     get_one_feed,
-    get_feeds_by_hash,
     get_feeds_by_codes,
     get_image_list,
 )
@@ -103,26 +103,27 @@ async def delete(
 @router.post("/get/location")
 async def get_feed_by_location(
     token: Annotated[str, Depends(oauth2_scheme)],
-    hjds: HJD,
+    bbox: BBox,
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ) -> ResponseFeedLocation | ResponseFeedCount:
     user = await validate_token(token, db)
     try:
-        if hjds.codes and len(hjds.codes[0]) <= 5:
-            count_list = await get_feeds_count_by_codes(db, redis, hjds.codes)
+        hjds = await get_hjd_from_bbox(db, bbox)
+        if hjds:
+            count_list = await get_feeds_count_by_codes(db, redis, hjds)
             result = list(
                 map(
                     lambda x: FeedCountInfo(
                         count=x[0],
-                        location=Location(long=float(x[1][1]), lat=float(x[1][0])),
+                        location=Location(long=float(x[1][0]), lat=float(x[1][1])),
                     ),
                     count_list,
                 )
             )
             return ResponseFeedCount(result="success", count=result)
         else:
-            feeds = await get_feeds_by_codes(db, redis, hjds.codes)
+            feeds = await get_feeds_by_codes(db, redis, hjds)
             result = list[FeedLocation]()
 
             following_list = await get_following(db, user.uid)

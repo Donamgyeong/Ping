@@ -2,6 +2,8 @@ from sqlalchemy import delete, update, select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2 import Geometry, Geography
 from geoalchemy2.functions import (
+    ST_Intersects,
+    ST_MakeEnvelope,
     ST_NumGeometries,
     ST_Contains,
     ST_SetSRID,
@@ -11,6 +13,7 @@ from geoalchemy2.functions import (
     ST_Centroid,
     ST_AsGeoJSON,
     ST_GeoHash,
+    ST_MakeBox2D,
 )
 from geoalchemy2.shape import from_shape
 from redis.asyncio import Redis
@@ -74,9 +77,9 @@ async def get_feeds_by_uid(db: AsyncSession, uid: str) -> list[Feed]:
     return list(result.all())
 
 
-async def get_feeds_by_position(
+async def get_feeds_by_codes(
     db: AsyncSession, redis: Redis, hjd_cds: list[str]
-) -> list[Feed]:
+) -> list[dict]:
     key = "feed:rate:" + get_current_time_bucket(10)
     feeds = []
     for hjd in hjd_cds:
@@ -144,14 +147,14 @@ async def get_feeds_count_by_codes(
     stmt = (
         select(
             EMD_Boundaries.emd_cd.label("code"),
-            func.count(Feed.feed_id).label("feed_count"),
             ST_AsGeoJSON(ST_Centroid(EMD_Boundaries.geom)).label("center_point"),
+            func.count(Feed.feed_id).label("feed_count"),
         )
         .where(
             ST_Contains(EMD_Boundaries.geom, Feed.location),
             EMD_Boundaries.emd_cd.in_(query_list),
         )
-        .group_by(EMD_Boundaries.emd_cd)
+        .group_by(EMD_Boundaries.emd_cd, EMD_Boundaries.geom)
     )
 
     result = await db.execute(stmt)
@@ -170,93 +173,22 @@ async def get_feeds_count_by_codes(
     return counts
 
 
-async def get_feeds_by_hash(
-    db: AsyncSession, redis: Redis, hashes: list[str]
-) -> list[dict]:
-    if not hashes:
-        return []
-
-    key = "feed:rate:" + get_current_time_bucket(10)
-    feeds = []
-    for hash in hashes:
-        feed = await redis.get("feed:cached:" + hash)
-        if feed:
-            print("------------from cache-----------")
-            data = json.loads(feed)
-            feeds.extend(data)
-        else:
-            stmt = select(Feed).where(
-                ST_Contains(
-                    ST_SetSRID(ST_GeomFromGeoHash(hash), 4326),
-                    Feed.location,
-                )
-            )
-            result = await db.scalars(stmt)
-            feed_list = list(map(lambda x: x.as_dict(), result.all()))
-
-            score = await redis.zscore(key, hash)
-            if not score:
-                await redis.zadd(key, {hash: 1})
-                await redis.expire(key, 900)
-                continue
-            else:
-                await redis.zincrby(key, 1, hash)
-
-            if score > 30:
-                await redis.set(
-                    "feed:cached:" + hash,
-                    json.dumps(feed_list, default=datetime_to_json_formatting),
-                )
-                await redis.expire("feed:cached:" + hash, 60)
-
-            feeds.extend(feed_list)
-
-    return feeds
-
-
-async def get_feeds_count_by_hash(
-    db: AsyncSession, redis: Redis, hashes: list[str]
-) -> list[tuple]:
-    counts = []
-    query_list = []
-
-    start = datetime.now()
-
-    for hash in hashes:
-        count = await redis.get("feed:count:" + hash)
-        if count:
-            counts.append((int(count), geohash2.decode_exactly(hash)))
-        else:
-            query_list.append(hash)
-
-    if len(query_list) == 0:
-        print("------------from cache-----------")
-        return counts
-
-    precision = len(query_list[0])
-    geohashes = ST_GeoHash(Feed.location, precision).label("geohash")
+async def get_hjd_from_bbox(db: AsyncSession, bbox: BBox) -> list[str]:
     stmt = (
-        select(
-            geohashes,
-            func.count(Feed.feed_id).label("feed_count"),
-            ST_AsGeoJSON(ST_Centroid(ST_Collect(Feed.location))).label("center_point"),
+        select(EMD_Boundaries.emd_cd)
+        .where(
+            ST_Intersects(
+                ST_MakeEnvelope(
+                    bbox.SW.long, bbox.SW.lat, bbox.NE.long, bbox.NE.lat, 4326
+                ),
+                EMD_Boundaries.geom,
+            )
         )
-        .where(geohashes.in_(query_list))
-        .group_by(geohashes)
+        .distinct()
     )
 
     result = await db.execute(stmt)
-    for row in result.all():
-        geojson = json.loads(row.center_point)
-        coords = geojson.get("coordinates")
-        counts.append((row.feed_count, (coords[0], coords[1])))
-
-        await redis.set("feed:count:" + row.geohash, row.feed_count)
-        await redis.expire("feed:count:" + row.geohash, 1800)
-
-    print("-------------" + str((datetime.now() - start).microseconds))
-
-    return counts
+    return list(map(lambda x: x[0], result.all()))
 
 
 async def delete_feed(db: AsyncSession, uid: str, fid: str):

@@ -78,6 +78,7 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET: ping-bucket
       S3_CACHE_BUCKET: ping-cache-bucket
+      S3_GEO_BUCKET: ping-geo-bucket
       SECRET_KEY: ${SECRET_KEY}
       EXPIRE_TIME: ${EXPIRE_TIME}
     ports:

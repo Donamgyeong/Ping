@@ -2,6 +2,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import StreamingResponse
+from rich import json
 from library.model import ResponseBase, ResponseID
 from sqlalchemy.ext.asyncio import AsyncSession
 from library.db import get_db
@@ -116,7 +117,9 @@ async def delete_file(
 
         await delete_from_minio(image_bucket, file_to_delete.filename)
         if await find_from_minio(cache_bucket, file_to_delete.filename + "_thumbnail"):
-            await delete_from_minio(cache_bucket, file_to_delete.filename + "_thumbnail")
+            await delete_from_minio(
+                cache_bucket, file_to_delete.filename + "_thumbnail"
+            )
 
         await delete_file_record(db, fid)
 
@@ -167,8 +170,11 @@ async def get_file(
                     image_bucket, file_record.filename
                 )
 
-                with SpooledTemporaryFile(max_size=10 * 1024 * 1024) as orig_file, \
-                     SpooledTemporaryFile(max_size=10 * 1024 * 1024) as thumb_file:
+                with SpooledTemporaryFile(
+                    max_size=10 * 1024 * 1024
+                ) as orig_file, SpooledTemporaryFile(
+                    max_size=10 * 1024 * 1024
+                ) as thumb_file:
 
                     for chunk in original_stream.stream(32 * 1024):
                         orig_file.write(chunk)
@@ -210,6 +216,24 @@ async def get_file(
         raise e
     except Exception as e:
         logging.error(f"Error getting file {fid} for user {user.uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.get("/geojson/{code}")
+async def get_geojson_from_minio(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    code: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    user = await validate_token(token, db)
+    try:
+        file_stream = await get_from_minio(settings.s3_geo_bucket, code + ".geojson")
+        return file_stream.json()
+    except Exception as e:
+        logging.error(f"Error retrieving GeoJSON from MinIO: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
