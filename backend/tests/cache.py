@@ -2,20 +2,11 @@ import requests
 import time
 
 payload = {
-    "hashes": [
-        "wydm6e",
-        "wydm6g",
-        "wydm75",
-        "wydm6s",
-        "wydm6u",
-        "wydm7h",
-        "wydm6t",
-        "wydm6v",
-        "wydm7j",
-        "wydm6w",
-        "wydm6y",
-        "wydm7n",
-    ]
+    "bbox": {
+        "SW": {"lat": 37.49, "long": 127.02},
+        "NE": {"lat": 37.51, "long": 127.04},
+    },
+    "zoom": 16,
 }
 
 URL = "http://localhost:8000"

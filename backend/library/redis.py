@@ -1,8 +1,16 @@
 import redis.asyncio as redis
 from config import settings
 
+pool = redis.ConnectionPool(
+    host=settings.redis_host,
+    port=settings.redis_port,
+    password=settings.redis_pass,
+    max_connections=50,
+    decode_responses=True,
+)
+
 redis_client = redis.Redis(
-    host=settings.redis_host, port=settings.redis_port, password=settings.redis_pass
+    connection_pool=pool,
 )
 
 

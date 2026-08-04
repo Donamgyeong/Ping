@@ -90,54 +90,36 @@ interface MapProps {
   onMapMoveEnd: (viewInfo: MapViewInfo) => void;
 }
 
-// Map movement listener
 const MapEvents = ({
   onMoveEnd,
 }: {
   onMoveEnd: (viewInfo: MapViewInfo) => void;
 }) => {
-  const handleViewChange = () => {
-    const bounds = map.getBounds();
-    const zoom = map.getZoom();
-    const center = map.getCenter();
-    onMoveEnd({
-      bounds: {
-        south: bounds.getSouth(),
-        west: bounds.getWest(),
-        north: bounds.getNorth(),
-        east: bounds.getEast(),
-      },
-      zoom,
-      center: {
-        latitude: center.lat,
-        longitude: center.lng,
-      },
-    });
-  };
+  const onMoveEndRef = React.useRef(onMoveEnd);
+  useEffect(() => {
+    onMoveEndRef.current = onMoveEnd;
+  }, [onMoveEnd]);
 
   const map = useMapEvents({
-    moveend: handleViewChange,
-    zoomend: handleViewChange,
+    moveend: () => {
+      const zoom = map.getZoom();
+      const bounds = map.getBounds();
+      const center = map.getCenter();
+      onMoveEndRef.current({
+        bounds: {
+          south: bounds.getSouth(),
+          west: bounds.getWest(),
+          north: bounds.getNorth(),
+          east: bounds.getEast(),
+        },
+        zoom,
+        center: {
+          latitude: center.lat,
+          longitude: center.lng,
+        },
+      });
+    },
   });
-
-  useEffect(() => {
-    const bounds = map.getBounds();
-    const zoom = map.getZoom();
-    const center = map.getCenter();
-    onMoveEnd({
-      bounds: {
-        south: bounds.getSouth(),
-        west: bounds.getWest(),
-        north: bounds.getNorth(),
-        east: bounds.getEast(),
-      },
-      zoom,
-      center: {
-        latitude: center.lat,
-        longitude: center.lng,
-      },
-    });
-  }, [map, onMoveEnd]);
 
   return null;
 };
@@ -365,6 +347,7 @@ function Map({
     <MapContainer
       center={[location.latitude, location.longitude]}
       zoom={13}
+      minZoom={7}
       scrollWheelZoom={true}
       className="absolute inset-0"
     >

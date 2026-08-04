@@ -23,7 +23,6 @@ async def create_user(
     await db.flush()
 
     db.add(new_profile)
-
     await db.flush()
 
     return uid, salt

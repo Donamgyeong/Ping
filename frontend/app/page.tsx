@@ -77,6 +77,8 @@ export default function Home() {
   const [feedCounts, setFeedCounts] = useState<
     { count: number; location: { long: number; lat: number } }[]
   >([]);
+  const [currentZoom, setCurrentZoom] = useState<number>(13);
+  const [currentAddress, setCurrentAddress] = useState<string | null>(null);
   const [loadedDetails, setLoadedDetails] = useState<Record<string, FeedItem>>(
     {}
   );
@@ -89,8 +91,60 @@ export default function Home() {
   );
   const mapMoveTimeout = useRef<NodeJS.Timeout | null>(null);
   const lastFetchedBBoxRef = useRef<string>("");
+  const addressCacheRef = useRef<Record<string, string>>({});
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  // Helper to fetch address by position for map center
+  // 줌 레벨 단계에 따라 표시 단위 결정
+  // zoom < 11       → 주소 미표시
+  // 11 <= zoom < 14 → 시도
+  // 14 <= zoom < 16 → 시도 + 시군구
+  // zoom >= 16      → 시도 + 시군구 + 읍면동
+  const fetchAddressForPosition = useCallback(
+    async (lat: number, long: number, zoom: number, authToken: string) => {
+      if (zoom < 11) {
+        setCurrentAddress(null);
+        return;
+      }
+
+      const cacheKey = `${lat.toFixed(3)},${long.toFixed(3)},z${zoom}`;
+      if (addressCacheRef.current[cacheKey]) {
+        setCurrentAddress(addressCacheRef.current[cacheKey]);
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `${API_URL}/feed/address?lat=${lat}&long=${long}`,
+          {
+            headers: { Authorization: `Bearer ${authToken}` },
+          }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.result === "success") {
+            let parts: string[];
+            if (zoom < 14) {
+              parts = [data.sido_nm];
+            } else if (zoom < 16) {
+              parts = [data.sido_nm, data.sigungu_nm];
+            } else {
+              parts = [data.sido_nm, data.sigungu_nm, data.emd_nm];
+            }
+            const formatted = parts.filter(Boolean).join(" ");
+            if (formatted) {
+              addressCacheRef.current[cacheKey] = formatted;
+              setCurrentAddress(formatted);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch center address:", err);
+      }
+    },
+    [API_URL]
+  );
 
   // Helper to fetch single feed detail with frontend caching
   const fetchSingleFeedDetail = useCallback(
@@ -232,13 +286,14 @@ export default function Home() {
         },
       };
       const initialZoom = 13;
+      fetchAddressForPosition(location.latitude, location.longitude, initialZoom, token);
       const bboxKey = `${initialBBox.SW.lat.toFixed(4)},${initialBBox.SW.long.toFixed(4)},${initialBBox.NE.lat.toFixed(4)},${initialBBox.NE.long.toFixed(4)},z${initialZoom}`;
       if (lastFetchedBBoxRef.current === "") {
         lastFetchedBBoxRef.current = bboxKey;
         fetchFeedsByBBox(initialBBox, initialZoom, token);
       }
     }
-  }, [isLoggedIn, location, token, fetchFeedsByBBox]);
+  }, [isLoggedIn, location, token, fetchFeedsByBBox, fetchAddressForPosition]);
 
   // Lazy loading handler when scrolling down in FeedList
   const handleLoadMore = useCallback(async () => {
@@ -316,12 +371,21 @@ export default function Home() {
     (viewInfo: MapViewInfo) => {
       if (!token) return;
 
+      const roundedZoom = Math.round(viewInfo.zoom);
+
+      // 모든 줌 레벨에서 주소 표시 (단계별 단위로)
+      fetchAddressForPosition(
+        viewInfo.center.latitude,
+        viewInfo.center.longitude,
+        roundedZoom,
+        token
+      );
+
       if (mapMoveTimeout.current) {
         clearTimeout(mapMoveTimeout.current);
       }
 
       mapMoveTimeout.current = setTimeout(() => {
-        const zoom = Math.round(viewInfo.zoom);
         const bbox: BBoxPayload = {
           SW: {
             lat: viewInfo.bounds.south,
@@ -332,21 +396,14 @@ export default function Home() {
             long: viewInfo.bounds.east,
           },
         };
-        const bboxKey = `${bbox.SW.lat.toFixed(4)},${bbox.SW.long.toFixed(4)},${bbox.NE.lat.toFixed(4)},${bbox.NE.long.toFixed(4)},z${zoom}`;
+        const bboxKey = `${bbox.SW.lat.toFixed(4)},${bbox.SW.long.toFixed(4)},${bbox.NE.lat.toFixed(4)},${bbox.NE.long.toFixed(4)},z${roundedZoom}`;
 
-        if (bboxKey === lastFetchedBBoxRef.current) {
-          return;
-        }
-
+        if (bboxKey === lastFetchedBBoxRef.current) return;
         lastFetchedBBoxRef.current = bboxKey;
-        setLocation({
-          latitude: viewInfo.center.latitude,
-          longitude: viewInfo.center.longitude,
-        });
-        fetchFeedsByBBox(bbox, zoom, token);
+        fetchFeedsByBBox(bbox, roundedZoom, token);
       }, 400);
     },
-    [token, fetchFeedsByBBox]
+    [token, fetchFeedsByBBox, fetchAddressForPosition]
   );
 
   const handleBackToFeedList = () => {
@@ -477,6 +534,12 @@ export default function Home() {
           <div className="absolute top-4 left-4 z-20 bg-red-950/80 border border-red-800 text-red-200 text-xs px-4 py-2 rounded-xl backdrop-blur-md shadow-lg flex items-center gap-2">
             <MapPin className="w-4 h-4 text-red-400" />
             <span>{error}</span>
+          </div>
+        )}
+        {currentAddress && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-gray-900/90 border border-gray-800/90 backdrop-blur-md px-4 py-1.5 rounded-full shadow-2xl flex items-center gap-1.5 text-xs text-gray-200 pointer-events-none">
+            <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            <span className="font-semibold">{currentAddress}</span>
           </div>
         )}
         {location ? (

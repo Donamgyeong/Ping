@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from router.user import router as user_router
 from router.feed import router as feed_router
 from router.chat import router as chat_router
@@ -7,7 +8,17 @@ from router.file import router as file_router
 from router.auth import router as auth_router
 from router.comment import router as comment_router
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from library.minio import minio_init
+
+    await minio_init()
+
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 origins = [
     "http://localhost:3000",
@@ -28,10 +39,3 @@ app.include_router(chat_router)
 app.include_router(file_router)
 app.include_router(auth_router)
 app.include_router(comment_router)
-
-
-@app.on_event("startup")
-async def startup_event():
-    from library.minio import minio_init
-
-    await minio_init()

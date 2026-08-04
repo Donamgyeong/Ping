@@ -221,25 +221,43 @@ async def test_delete_feed(db_session, test_user_data, feed_payload):
     assert get_response.status_code == 404
 
 
+async def mock_get_hjd_from_bbox(db, bbox):
+    return ["1111051500"]
+
+
+async def mock_get_feeds_by_codes(db, redis, hjds):
+    from sqlalchemy import select
+    from library.schema import Feed
+    stmt = select(Feed)
+    result = await db.scalars(stmt)
+    return [feed.as_dict() for feed in result.all()]
+
+
 @pytest.mark.asyncio
-async def test_get_feed_by_location(db_session, auth_headers, feed_payload):
+@patch("router.feed.get_hjd_from_bbox", side_effect=mock_get_hjd_from_bbox)
+@patch("router.feed.get_feeds_by_codes", side_effect=mock_get_feeds_by_codes)
+async def test_get_feed_by_location(
+    mock_codes, mock_hjd, db_session, auth_headers, feed_payload
+):
     """
-    GET /feed/get/location
-    - 위치 기반 피드 조회 테스트
+    POST /feed/get/location
+    - 위치 기반 피드 조회 테스트 (bbox & zoom 포함)
     """
     # 1. 피드 생성
     client.post("/feed/new", headers=auth_headers, json=feed_payload)
 
     # 2. 위치 기반 조회
-    import geohash2
-
     long = feed_payload["location"]["long"]
     lat = feed_payload["location"]["lat"]
-    gh = geohash2.encode(lat, long, 7)
+    bbox = {
+        "SW": {"lat": lat - 0.01, "long": long - 0.01},
+        "NE": {"lat": lat + 0.01, "long": long + 0.01},
+    }
 
     response = client.post(
         "/feed/get/location",
-        json={"hashes": [gh]},
+        params={"zoom": 16},
+        json=bbox,
         headers=auth_headers,
     )
     assert response.status_code == 200
@@ -275,7 +293,11 @@ async def test_feed_authorization(
 
 
 @pytest.mark.asyncio
-async def test_geohash_cache_performance_via_api(db_session, auth_headers):
+@patch("router.feed.get_hjd_from_bbox", side_effect=mock_get_hjd_from_bbox)
+@patch("router.feed.get_feeds_by_codes", side_effect=mock_get_feeds_by_codes)
+async def test_geohash_cache_performance_via_api(
+    mock_codes, mock_hjd, db_session, auth_headers
+):
     """
     사용자 생성(/user/join), 로그인(/auth/token), 피드 생성(/feed/new) 및 위치 기반 피드 조회(/feed/get/location)를
     모두 API 경로 요청으로 수행하며, 동일 geohash 구역 30회 초과 조회 시 Redis 캐싱 전/후 실행 시간 차이를 비교합니다.
@@ -294,16 +316,22 @@ async def test_geohash_cache_performance_via_api(db_session, auth_headers):
     assert create_feed_res.status_code == 200
     assert create_feed_res.json()["result"] == "success"
 
-    # 4. Geohash 인코딩 및 위치 조회 요청 데이터 준비
+    # 4. Bounding box 및 줌 레벨 기반 위치 조회 요청 데이터 준비
     long = feed_payload["location"]["long"]
     lat = feed_payload["location"]["lat"]
-    gh = geohash2.encode(lat, long, 6)
-    location_payload = {"hashes": [gh]}
+    bbox = {
+        "SW": {"lat": lat - 0.01, "long": long - 0.01},
+        "NE": {"lat": lat + 0.01, "long": long + 0.01},
+    }
+    location_payload = {"bbox": bbox, "zoom": 16}
 
     # 5. 캐싱 전 (DB 쿼리 실행) 1번째 API 조회 소요 시간 측정
     start_uncached = time.perf_counter()
     uncached_response = client.post(
-        "/feed/get/location", json=location_payload, headers=auth_headers
+        "/feed/get/location",
+        params={"zoom": 16},
+        json=bbox,
+        headers=auth_headers,
     )
     uncached_duration = (time.perf_counter() - start_uncached) * 1000  # ms 단위
 
@@ -313,14 +341,20 @@ async def test_geohash_cache_performance_via_api(db_session, auth_headers):
     # 6. Redis 캐싱 조건(score > 30) 충족을 위해 32회 추가 연속 조회 API 요청
     for _ in range(32):
         res = client.post(
-            "/feed/get/location", json=location_payload, headers=auth_headers
+            "/feed/get/location",
+            params={"zoom": 16},
+            json=bbox,
+            headers=auth_headers,
         )
         assert res.status_code == 200
 
     # 7. 캐싱 후 (Redis 캐시 조회) API 조회 소요 시간 측정
     start_cached = time.perf_counter()
     cached_response = client.post(
-        "/feed/get/location", json=location_payload, headers=auth_headers
+        "/feed/get/location",
+        params={"zoom": 16},
+        json=bbox,
+        headers=auth_headers,
     )
     cached_duration = (time.perf_counter() - start_cached) * 1000  # ms 단위
 
