@@ -140,9 +140,9 @@ async def delete_file(
 @router.get("/get/{fid}")
 async def get_file(
     fid: str,
-    thumbnail: bool,
     token: Annotated[str, Depends(oauth2_scheme)],
     db: AsyncSession = Depends(get_db),
+    thumbnail: bool = False,
 ) -> StreamingResponse:
     user = await validate_token(token, db)
     try:

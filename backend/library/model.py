@@ -166,3 +166,9 @@ class CommentItem(BaseModel):
 
 class ResponseCommentList(ResponseBase):
     comments: list[CommentItem]
+
+
+class ResponseAddress(ResponseBase):
+    sido_nm: str
+    sigungu_nm: str
+    emd_nm: str

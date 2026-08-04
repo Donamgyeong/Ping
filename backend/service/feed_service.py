@@ -1,19 +1,15 @@
-from sqlalchemy import delete, update, select, func, or_
+from sqlalchemy import Row, delete, update, select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2 import Geometry, Geography
 from geoalchemy2.functions import (
     ST_Intersects,
     ST_MakeEnvelope,
-    ST_NumGeometries,
     ST_Contains,
-    ST_SetSRID,
-    ST_GeomFromGeoHash,
-    ST_ClusterDBSCAN,
     ST_Collect,
     ST_Centroid,
     ST_AsGeoJSON,
-    ST_GeoHash,
-    ST_MakeBox2D,
+    ST_MakePoint,
+    ST_SetSRID,
 )
 from geoalchemy2.shape import from_shape
 from redis.asyncio import Redis
@@ -120,12 +116,24 @@ async def get_feeds_by_codes(
 
 
 async def get_feeds_count_by_codes(
-    db: AsyncSession, redis: Redis, hjds: list[str]
+    db: AsyncSession,
+    redis: Redis,
+    hjds: list[str],
+    zoom: int,
 ) -> list[tuple]:
     counts = []
     query_list = []
 
-    for code in hjds:
+    codes = set(hjds)
+    code_len = len(hjds[0])
+    if zoom < 14 and zoom >= 11:
+        codes = set(map(lambda x: x[:5], hjds))
+        code_len = 5
+    elif zoom < 11:
+        codes = set(map(lambda x: x[:2], hjds))
+        code_len = 2
+
+    for code in codes:
         count = await redis.get("feed:count:" + code)
         if count:
             geojson = await redis.get("feed:location:" + code)
@@ -144,17 +152,20 @@ async def get_feeds_count_by_codes(
         print("------------from cache-----------")
         return counts
 
+    code_expr = func.left(EMD_Boundaries.emd_cd, code_len)
     stmt = (
         select(
-            EMD_Boundaries.emd_cd.label("code"),
-            ST_AsGeoJSON(ST_Centroid(EMD_Boundaries.geom)).label("center_point"),
+            code_expr.label("code"),
+            ST_AsGeoJSON(ST_Centroid(ST_Collect(EMD_Boundaries.geom))).label(
+                "center_point"
+            ),
             func.count(Feed.feed_id).label("feed_count"),
         )
         .where(
             ST_Contains(EMD_Boundaries.geom, Feed.location),
-            EMD_Boundaries.emd_cd.in_(query_list),
+            code_expr.in_(query_list),
         )
-        .group_by(EMD_Boundaries.emd_cd, EMD_Boundaries.geom)
+        .group_by(code_expr)
     )
 
     result = await db.execute(stmt)
@@ -222,13 +233,16 @@ async def update_feed(db: AsyncSession, uid: str, feed: FeedUpdate):
 
 async def get_address_from_position(
     db: AsyncSession, lat: float, long: float
-) -> str | None:
-    point = from_shape(Point(long, lat), srid=4326)
-    stmt = select(EMD_Boundaries.emd_cd).where(ST_Contains(EMD_Boundaries.geom, point))
+) -> Row | None:
+    stmt = select(SIDO.sido_nm, SIGUNGU.sgg_nm, EMD_Boundaries.emd_nm).where(
+        ST_Contains(EMD_Boundaries.geom, ST_SetSRID(ST_MakePoint(long, lat), 4326)),
+        func.left(EMD_Boundaries.emd_cd, 2) == SIDO.sido_cd,
+        func.left(EMD_Boundaries.emd_cd, 5) == SIGUNGU.sigungu_cd,
+    )
     result = await db.execute(stmt)
-    emd_cd = result.scalar_one_or_none()
+    address = result.first()
 
-    return emd_cd
+    return address
 
 
 def get_current_time_bucket(interval_minutes: int = 10) -> str:

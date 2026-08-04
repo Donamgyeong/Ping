@@ -186,4 +186,4 @@ class SIGUNGU(Base):
     __tablename__ = "sigungu"
 
     sigungu_cd: Mapped[str] = mapped_column(String(5), primary_key=True)
-    sigungu_nm: Mapped[str] = mapped_column(String(100), nullable=False)
+    sgg_nm: Mapped[str] = mapped_column(String(100), nullable=False)

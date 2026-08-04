@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { formatLocalDate } from "@/utils/date";
 import { useAuth } from "@/hooks/useAuth";
-import { Trash2, MessageSquare, Send } from "lucide-react";
+import { Trash2, MessageSquare, Send, MapPin } from "lucide-react";
 
 interface FeedItem {
   fid: string;
@@ -52,10 +52,55 @@ export default function FeedDetail({ feed, onBack, token }: FeedDetailProps) {
   const [newComment, setNewComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loadingComments, setLoadingComments] = useState(true);
+  const [address, setAddress] = useState<string | null>(null);
+
+  // Fetch Address from position
+  useEffect(() => {
+    const fetchAddress = async () => {
+      const loc = feed.location as any;
+      if (!loc || !token) return;
+
+      const lat = loc.lat ?? loc.latitude;
+      const long = loc.long ?? loc.lng ?? loc.longitude;
+
+      if (
+        lat == null ||
+        long == null ||
+        isNaN(Number(lat)) ||
+        isNaN(Number(long))
+      ) {
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `${API_URL}/feed/address?lat=${lat}&long=${long}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.result === "success") {
+            const formatted = [data.sido_nm, data.sigungu_nm]
+              .filter(Boolean)
+              .join(" ");
+            setAddress(formatted || null);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch address:", err);
+      }
+    };
+
+    fetchAddress();
+  }, [feed.location, token, API_URL]);
 
   const goToPrevious = () => {
     const isFirstImage = currentImageIndex === 0;
-    const newIndex = isFirstImage ? imageUrls.length - 1 : currentImageIndex - 1;
+    const newIndex = isFirstImage
+      ? imageUrls.length - 1
+      : currentImageIndex - 1;
     setCurrentImageIndex(newIndex);
   };
 
@@ -172,7 +217,9 @@ export default function FeedDetail({ feed, onBack, token }: FeedDetailProps) {
       });
 
       if (response.ok) {
-        setComments((prev) => prev.filter((c) => c.comment_id !== commentToDelete));
+        setComments((prev) =>
+          prev.filter((c) => c.comment_id !== commentToDelete)
+        );
       } else {
         console.error("Failed to delete comment");
       }
@@ -229,9 +276,18 @@ export default function FeedDetail({ feed, onBack, token }: FeedDetailProps) {
                 {feed.nickname || feed.uid}
               </p>
             </Link>
-            <p className="text-xs text-gray-400">
-              {formatLocalDate(feed.post_date)}
-            </p>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-400 mt-0.5">
+              <span>{formatLocalDate(feed.post_date)}</span>
+              {address && (
+                <>
+                  <span>•</span>
+                  <div className="flex items-center gap-1 text-blue-400 font-medium">
+                    <MapPin className="w-3.5 h-3.5 shrink-0 text-blue-400" />
+                    <span>{address}</span>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -375,7 +431,8 @@ export default function FeedDetail({ feed, onBack, token }: FeedDetailProps) {
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-4">
               <h4 className="text-lg font-bold text-white">댓글 삭제</h4>
               <p className="text-sm text-gray-300">
-                정말로 이 댓글을 삭제하시겠습니까? 삭제된 댓글은 복구할 수 없습니다.
+                정말로 이 댓글을 삭제하시겠습니까? 삭제된 댓글은 복구할 수
+                없습니다.
               </p>
               <div className="flex justify-end gap-3 pt-2">
                 <button
@@ -406,7 +463,8 @@ export default function FeedDetail({ feed, onBack, token }: FeedDetailProps) {
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-4">
               <h4 className="text-lg font-bold text-white">피드 삭제</h4>
               <p className="text-sm text-gray-300">
-                정말로 이 피드를 삭제하시겠습니까? 게시물 및 포함된 내용이 모두 삭제됩니다.
+                정말로 이 피드를 삭제하시겠습니까? 게시물 및 포함된 내용이 모두
+                삭제됩니다.
               </p>
               <div className="flex justify-end gap-3 pt-2">
                 <button

@@ -115,19 +115,23 @@ export default function Home() {
     [fetchSingleFeedDetail]
   );
 
-  // Helper to fetch feeds by Bounding Box (SW & NE)
+  // Helper to fetch feeds by Bounding Box (SW & NE) and Zoom level
   const fetchFeedsByBBox = useCallback(
-    async (bbox: BBoxPayload, authToken: string) => {
+    async (bbox: BBoxPayload, zoom: number, authToken: string) => {
       setError(null);
       try {
-        const feedIdsResponse = await fetch(`${API_URL}/feed/get/location`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${authToken}`,
-          },
-          body: JSON.stringify(bbox),
-        });
+        const roundedZoom = Math.round(zoom);
+        const feedIdsResponse = await fetch(
+          `${API_URL}/feed/get/location?zoom=${roundedZoom}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${authToken}`,
+            },
+            body: JSON.stringify(bbox),
+          }
+        );
 
         if (!feedIdsResponse.ok) {
           throw new Error(
@@ -227,10 +231,11 @@ export default function Home() {
           long: location.longitude + lngDelta,
         },
       };
-      const bboxKey = `${initialBBox.SW.lat.toFixed(4)},${initialBBox.SW.long.toFixed(4)},${initialBBox.NE.lat.toFixed(4)},${initialBBox.NE.long.toFixed(4)}`;
+      const initialZoom = 13;
+      const bboxKey = `${initialBBox.SW.lat.toFixed(4)},${initialBBox.SW.long.toFixed(4)},${initialBBox.NE.lat.toFixed(4)},${initialBBox.NE.long.toFixed(4)},z${initialZoom}`;
       if (lastFetchedBBoxRef.current === "") {
         lastFetchedBBoxRef.current = bboxKey;
-        fetchFeedsByBBox(initialBBox, token);
+        fetchFeedsByBBox(initialBBox, initialZoom, token);
       }
     }
   }, [isLoggedIn, location, token, fetchFeedsByBBox]);
@@ -316,6 +321,7 @@ export default function Home() {
       }
 
       mapMoveTimeout.current = setTimeout(() => {
+        const zoom = Math.round(viewInfo.zoom);
         const bbox: BBoxPayload = {
           SW: {
             lat: viewInfo.bounds.south,
@@ -326,7 +332,7 @@ export default function Home() {
             long: viewInfo.bounds.east,
           },
         };
-        const bboxKey = `${bbox.SW.lat.toFixed(4)},${bbox.SW.long.toFixed(4)},${bbox.NE.lat.toFixed(4)},${bbox.NE.long.toFixed(4)}`;
+        const bboxKey = `${bbox.SW.lat.toFixed(4)},${bbox.SW.long.toFixed(4)},${bbox.NE.lat.toFixed(4)},${bbox.NE.long.toFixed(4)},z${zoom}`;
 
         if (bboxKey === lastFetchedBBoxRef.current) {
           return;
@@ -337,7 +343,7 @@ export default function Home() {
           latitude: viewInfo.center.latitude,
           longitude: viewInfo.center.longitude,
         });
-        fetchFeedsByBBox(bbox, token);
+        fetchFeedsByBBox(bbox, zoom, token);
       }, 400);
     },
     [token, fetchFeedsByBBox]

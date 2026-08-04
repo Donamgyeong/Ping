@@ -6,6 +6,7 @@ from library.model import *
 from library.schema import Feed
 from service.feed_service import (
     create_feed,
+    get_address_from_position,
     get_feeds_count_by_codes,
     get_hjd_from_bbox,
     update_feed,
@@ -104,14 +105,15 @@ async def delete(
 async def get_feed_by_location(
     token: Annotated[str, Depends(oauth2_scheme)],
     bbox: BBox,
+    zoom: int,
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ) -> ResponseFeedLocation | ResponseFeedCount:
     user = await validate_token(token, db)
     try:
         hjds = await get_hjd_from_bbox(db, bbox)
-        if hjds:
-            count_list = await get_feeds_count_by_codes(db, redis, hjds)
+        if hjds and zoom < 16:
+            count_list = await get_feeds_count_by_codes(db, redis, hjds, zoom)
             result = list(
                 map(
                     lambda x: FeedCountInfo(
@@ -129,7 +131,6 @@ async def get_feed_by_location(
             following_list = await get_following(db, user.uid)
             following_uids = map(lambda x: x.uid, following_list)
             for feed in feeds:
-                print(feed)
                 if (
                     feed["uid"] in following_uids
                     or not feed["private"]
@@ -288,6 +289,36 @@ async def get_feed_images(
         raise e
     except Exception as e:
         logging.error(f"Error getting feed images for feed {fid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.get("/address")
+async def get_address(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    lat: float,
+    long: float,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseAddress:
+    user = await validate_token(token, db)
+    try:
+        address = await get_address_from_position(db, lat, long)
+        if not address:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Address not found"
+            )
+        return ResponseAddress(
+            result="success",
+            sido_nm=address.sido_nm,
+            sigungu_nm=address.sgg_nm,
+            emd_nm=address.emd_nm,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting address for user : {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
