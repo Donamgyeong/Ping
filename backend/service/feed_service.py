@@ -81,7 +81,6 @@ async def get_feeds_by_codes(
     for hjd in hjd_cds:
         feed = await redis.get("feed:cached:" + hjd)
         if feed:
-            print("------------from cache-----------")
             data = json.loads(feed)
             feeds.extend(data)
         else:
@@ -149,7 +148,6 @@ async def get_feeds_count_by_codes(
             query_list.append(code)
 
     if len(query_list) == 0:
-        print("------------from cache-----------")
         return counts
 
     code_expr = func.left(EMD_Boundaries.emd_cd, code_len)

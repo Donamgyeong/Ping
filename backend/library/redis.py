@@ -5,7 +5,7 @@ pool = redis.ConnectionPool(
     host=settings.redis_host,
     port=settings.redis_port,
     password=settings.redis_pass,
-    max_connections=50,
+    max_connections=100,
     decode_responses=True,
 )
 

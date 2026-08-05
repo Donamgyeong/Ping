@@ -23,7 +23,7 @@ logging.getLogger("sqlalchemy.pool").setLevel(logging.ERROR)
 logging.getLogger("sqlalchemy.orm").setLevel(logging.ERROR)
 
 engine = create_async_engine(
-    DB_URL, echo=False, plugins=["geoalchemy2"], pool_size=20, max_overflow=10
+    DB_URL, echo=False, plugins=["geoalchemy2"], pool_size=20, max_overflow=3
 )
 async_session = async_sessionmaker(engine, autoflush=True, autocommit=False)
 

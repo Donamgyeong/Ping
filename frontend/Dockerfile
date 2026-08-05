@@ -2,8 +2,9 @@ FROM node:26-alpine
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY yarn.lock package.json ./
 
-RUN npm install
+RUN npm install -g yarn
+RUN yarn install --frozen-lockfile
 
 EXPOSE 3000

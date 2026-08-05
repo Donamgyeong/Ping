@@ -96,14 +96,14 @@ services:
     container_name: ping-frontend
     restart: always
     environment:
-      API_URL: http://ping-backend:8000
+      NEXT_PUBLIC_API_URL: ${URL}
     ports:
       - "3000:3000"
     depends_on:
       - backend
     networks:
       - ping_network
-    command: npm run dev
+    command: yarn dev
     volumes:
       - ./frontend:/app
       - /app/node_modules

@@ -6,6 +6,6 @@ COPY requirements.txt ./requirements.txt
 
 RUN pip install -r requirements.txt
 
-CMD ["fastapi", "dev", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--workers", "4", "--loop", "uvloop", "--host", "0.0.0.0"]
 
 EXPOSE 8000
