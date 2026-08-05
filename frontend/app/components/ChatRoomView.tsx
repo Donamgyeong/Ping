@@ -123,6 +123,7 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
     if (!loading && cid && token) {
       const socket = new WebSocket(`${WEBSOCKET_URL}/chat/ws`);
       socketRef.current = socket;
+      let pingInterval: NodeJS.Timeout | null = null;
 
       socket.onopen = () => {
         console.log("WebSocket connection established");
@@ -132,15 +133,33 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
             payload: token,
           })
         );
+
+        // 30초 백엔드 타임아웃 방지를 위해 25초(또는 30초)마다 heartbeat ping 전송
+        pingInterval = setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "ping" }));
+          }
+        }, 25000);
       };
 
       socket.onmessage = (event) => {
-        const messageData = JSON.parse(event.data);
-        setMessages((prevMessages) => [...prevMessages, messageData]);
+        try {
+          const messageData = JSON.parse(event.data);
+          // 서버에서 온 pong 또는 제어 메시지 예외 처리
+          if (messageData.type === "pong") {
+            return;
+          }
+          if (messageData.mid) {
+            setMessages((prevMessages) => [...prevMessages, messageData]);
+          }
+        } catch (e) {
+          console.error("Failed to parse WebSocket message:", e);
+        }
       };
 
       socket.onclose = () => {
         console.log("WebSocket connection closed");
+        if (pingInterval) clearInterval(pingInterval);
       };
 
       socket.onerror = (error) => {
@@ -148,6 +167,7 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
       };
 
       return () => {
+        if (pingInterval) clearInterval(pingInterval);
         socket.onopen = null;
         socket.onmessage = null;
         socket.onclose = null;

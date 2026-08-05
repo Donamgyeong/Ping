@@ -252,32 +252,37 @@ async def client_reader(
 ):
     try:
         while True:
-            data = await websocket.receive_text()
+            data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
             message_data = json.loads(data)
-            cid = message_data.get("cid")
-            message = message_data.get("message")
-            date = datetime.now(timezone.utc)
 
-            if not cid or not message:
-                continue
+            if message_data.get("type") != "ping":
+                await websocket.send_json({"type": "pong"})
+            else:
+                cid = message_data.get("cid")
+                message = message_data.get("message")
+                date = datetime.now(timezone.utc)
 
-            if cid not in cids:
-                logging.warning(
-                    f"User {user_uid} tried to send message to unauthorized chat room {cid}"
+                if not cid or not message:
+                    continue
+
+                if cid not in cids:
+                    logging.warning(
+                        f"User {user_uid} tried to send message to unauthorized chat room {cid}"
+                    )
+                    continue
+
+                mid = await add_message(db, cid, user_uid, message, date)
+
+                chat_item = ChatItem(
+                    mid=mid, cid=cid, uid=user_uid, message=message, date=date
                 )
-                continue
 
-            mid = await add_message(db, cid, user_uid, message, date)
-
-            chat_item = ChatItem(
-                mid=mid, cid=cid, uid=user_uid, message=message, date=date
-            )
-
-            await redis.publish(f"chat:{cid}", chat_item.model_dump_json())
-            await redis.expire(f"chat:{cid}", 259200)
+                await redis.publish(f"chat:{cid}", chat_item.model_dump_json())
+                await redis.expire(f"chat:{cid}", 259200)
     except WebSocketDisconnect:
         logging.info(f"Client {user_uid} disconnected.")
     except Exception as e:
+        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
         logging.warning(f"Client reader error for {user_uid}: {e}")
 
 
