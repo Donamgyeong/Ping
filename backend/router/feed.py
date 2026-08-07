@@ -15,6 +15,10 @@ from service.feed_service import (
     get_one_feed,
     get_feeds_by_codes,
     get_image_list,
+    get_sido_list,
+    get_sigungu_list,
+    get_emd_list,
+    get_region_centroid,
 )
 from service.auth_service import validate_token
 from service.user_service import is_followed, get_following
@@ -23,7 +27,6 @@ from geoalchemy2.shape import from_shape, to_shape
 from library.db import get_db
 from library.redis import get_redis
 from redis.asyncio import Redis
-import json
 import logging
 import traceback
 
@@ -234,7 +237,7 @@ async def get_feed(
         )
 
 
-@router.get("/get/following")
+@router.get("/following/get")
 async def get_following_feeds(
     token: Annotated[str, Depends(oauth2_scheme)],
     db: AsyncSession = Depends(get_db),
@@ -253,7 +256,9 @@ async def get_following_feeds(
         result = list[FeedID]()
 
         for feed in feeds:
-            if feed.post_date >= datetime.now(timezone.utc) - timedelta(days=7):
+            if feed.post_date.astimezone(timezone.utc) >= datetime.now(
+                timezone.utc
+            ) - timedelta(days=7):
                 feedid = FeedID(
                     fid=feed.feed_id, uid=feed.uid, post_date=feed.post_date
                 )
@@ -263,7 +268,7 @@ async def get_following_feeds(
     except HTTPException as e:
         raise e
     except Exception as e:
-        logging.error(f"Error getting following feeds: {e}")
+        logging.error(f"Error getting hot feeds: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -319,6 +324,95 @@ async def get_address(
         raise e
     except Exception as e:
         logging.error(f"Error getting address for user : {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.get("/region/sido")
+async def get_region_sido(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: AsyncSession = Depends(get_db),
+) -> ResponseSidoList:
+    user = await validate_token(token, db)
+    try:
+        items = await get_sido_list(db)
+        return ResponseSidoList(
+            result="success",
+            items=[SidoItem(sido_cd=row.sido_cd, sido_nm=row.sido_nm) for row in items],
+        )
+    except Exception as e:
+        logging.error(f"Error getting sido list: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.get("/region/sigungu")
+async def get_region_sigungu(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    sido_cd: str,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseSigunguList:
+    user = await validate_token(token, db)
+    try:
+        items = await get_sigungu_list(db, sido_cd)
+        return ResponseSigunguList(
+            result="success",
+            items=[
+                SigunguItem(sigungu_cd=row.sigungu_cd, sgg_nm=row.sgg_nm)
+                for row in items
+            ],
+        )
+    except Exception as e:
+        logging.error(f"Error getting sigungu list for sido {sido_cd}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.get("/region/emd")
+async def get_region_emd(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    sigungu_cd: str,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseEmdList:
+    user = await validate_token(token, db)
+    try:
+        items = await get_emd_list(db, sigungu_cd)
+        return ResponseEmdList(
+            result="success",
+            items=[EmdItem(emd_cd=row.emd_cd, emd_nm=row.emd_nm) for row in items],
+        )
+    except Exception as e:
+        logging.error(f"Error getting emd list for sigungu {sigungu_cd}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.get("/region/centroid")
+async def get_centroid(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    emd_cd: str,
+    db: AsyncSession = Depends(get_db),
+) -> ResponseCentroid:
+    user = await validate_token(token, db)
+    try:
+        coords = await get_region_centroid(db, emd_cd)
+        if not coords:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Region not found"
+            )
+        return ResponseCentroid(result="success", lat=coords[0], lng=coords[1])
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting centroid for region {emd_cd}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",

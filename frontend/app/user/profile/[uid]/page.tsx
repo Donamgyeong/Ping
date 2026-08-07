@@ -3,7 +3,8 @@
 import { useEffect, useState, memo, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
-import { User as UserIcon, UserPlus, UserCheck, Clock, Settings } from "lucide-react";
+import { User as UserIcon, UserPlus, UserCheck, Clock, Settings, MapPin } from "lucide-react";
+import { fetchFeedAddressCached } from "@/utils/feedCache";
 
 interface UserProfile {
   uid: string;
@@ -47,6 +48,7 @@ const FeedImageTile = memo(function FeedImageTile({
   const { token } = useAuth();
   const router = useRouter();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const tileRef = useRef<HTMLDivElement | null>(null);
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -72,6 +74,18 @@ const FeedImageTile = memo(function FeedImageTile({
       observer.disconnect();
     };
   }, []);
+
+  // Fetch address up to Eup/Myeon/Dong when visible
+  useEffect(() => {
+    if (!isVisible || !token || !feed.location) return;
+    const lat = feed.location.lat;
+    const long = feed.location.long;
+    if (lat != null && long != null) {
+      fetchFeedAddressCached(lat, long, token, API_URL).then((addr) => {
+        if (addr) setAddress(addr);
+      });
+    }
+  }, [isVisible, feed.location, token, API_URL]);
 
   // Fetch image only when tile becomes visible
   useEffect(() => {
@@ -127,10 +141,16 @@ const FeedImageTile = memo(function FeedImageTile({
           <div className="w-5 h-5 border-2 border-blue-500/40 border-t-transparent rounded-full animate-spin" />
         </div>
       )}
-      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex justify-center items-center p-2">
-        <p className="text-xs text-white line-clamp-2 text-center font-medium">
+      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-2.5 sm:p-3">
+        <p className="text-xs text-white line-clamp-3 leading-relaxed font-medium">
           {feed.content}
         </p>
+        {address && (
+          <div className="flex items-center gap-1 text-[10px] text-blue-300 font-medium truncate pt-1">
+            <MapPin className="w-3 h-3 text-blue-400 shrink-0" />
+            <span className="truncate">{address}</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -156,7 +176,18 @@ export default function UserProfilePage() {
   const [followStatus, setFollowStatus] =
     useState<FollowStatus["status"] | null>(null);
 
+  const [processedCount, setProcessedCount] = useState(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const rawFeedIdsRef = useRef<{ fid: string }[]>([]);
+  const processedCountRef = useRef<number>(0);
+  const loadingMoreRef = useRef<boolean>(false);
+  const profileRef = useRef<UserProfile | null>(null);
+
+  rawFeedIdsRef.current = rawFeedIds;
+  processedCountRef.current = processedCount;
+  loadingMoreRef.current = loadingMore;
+  profileRef.current = profile;
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
   const isMyProfile = loggedInUid === uid;
@@ -225,9 +256,13 @@ export default function UserProfilePage() {
           ) {
             const allIds = feedIdsData.feedid;
             setRawFeedIds(allIds);
+            rawFeedIdsRef.current = allIds;
 
-            // Lazy load: Fetch details for only the first batch (12 items)
+            // Lazy load: Fetch details for first batch
             const initialBatch = allIds.slice(0, BATCH_SIZE);
+            setProcessedCount(initialBatch.length);
+            processedCountRef.current = initialBatch.length;
+
             const initialFeeds = await fetchFeedDetailsBatch(
               initialBatch,
               token,
@@ -237,10 +272,12 @@ export default function UserProfilePage() {
           } else {
             setRawFeedIds([]);
             setFeeds([]);
+            setProcessedCount(0);
           }
         } else {
           setRawFeedIds([]);
           setFeeds([]);
+          setProcessedCount(0);
         }
 
         if (followersRes.ok) {
@@ -286,60 +323,59 @@ export default function UserProfilePage() {
   // Load more feeds handler for pagination / lazy loading
   const handleLoadMore = useCallback(async () => {
     if (
-      loadingMore ||
-      feeds.length >= rawFeedIds.length ||
+      loadingMoreRef.current ||
+      processedCountRef.current >= rawFeedIdsRef.current.length ||
       !token ||
-      !profile
-    )
+      !profileRef.current
+    ) {
       return;
+    }
 
+    loadingMoreRef.current = true;
     setLoadingMore(true);
-    const nextStartIndex = feeds.length;
-    const nextBatchIds = rawFeedIds.slice(
-      nextStartIndex,
-      nextStartIndex + BATCH_SIZE
+
+    const start = processedCountRef.current;
+    const nextBatchIds = rawFeedIdsRef.current.slice(
+      start,
+      start + BATCH_SIZE
     );
+    const newProcessedCount = start + nextBatchIds.length;
+    processedCountRef.current = newProcessedCount;
+    setProcessedCount(newProcessedCount);
 
-    const newFeeds = await fetchFeedDetailsBatch(
-      nextBatchIds,
-      token,
-      profile.nickname
-    );
+    try {
+      const newFeeds = await fetchFeedDetailsBatch(
+        nextBatchIds,
+        token,
+        profileRef.current.nickname
+      );
 
-    setFeeds((prev) => {
-      const existingFids = new Set(prev.map((item) => item.fid));
-      const uniqueNewFeeds = newFeeds.filter((item) => !existingFids.has(item.fid));
-      return [...prev, ...uniqueNewFeeds];
-    });
-    setLoadingMore(false);
-  }, [
-    loadingMore,
-    feeds.length,
-    rawFeedIds,
-    token,
-    profile,
-    fetchFeedDetailsBatch,
-  ]);
+      setFeeds((prev) => {
+        const existingFids = new Set(prev.map((item) => item.fid));
+        const uniqueNewFeeds = newFeeds.filter((item) => !existingFids.has(item.fid));
+        return [...prev, ...uniqueNewFeeds];
+      });
+    } catch (err) {
+      console.error('[Profile] Failed to load more profile feeds:', err);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [token, fetchFeedDetailsBatch]);
 
-  // Infinite scroll intersection observer for bottom sentinel
+  // Window scroll-based infinite scroll (more reliable than IntersectionObserver for this layout)
   useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          handleLoadMore();
-        }
-      },
-      { rootMargin: "300px" }
-    );
-
-    observer.observe(sentinel);
-
-    return () => {
-      observer.disconnect();
+    const onScroll = () => {
+      const scrolled = window.scrollY + window.innerHeight;
+      const total = document.documentElement.scrollHeight;
+      // Trigger when within 400px of bottom
+      if (total - scrolled < 400) {
+        handleLoadMore();
+      }
     };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, [handleLoadMore]);
 
   const handleFollow = async () => {
@@ -439,8 +475,6 @@ export default function UserProfilePage() {
     }
   };
 
-  const imageFeeds = feeds.filter((feed) => feed.images && feed.images.length > 0);
-
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-black text-white p-4 sm:p-6">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -501,9 +535,9 @@ export default function UserProfilePage() {
             Posts ({rawFeedIds.length})
           </h2>
 
-          {imageFeeds.length > 0 ? (
+          {feeds.length > 0 ? (
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
-              {imageFeeds.map((feed) => (
+              {feeds.map((feed) => (
                 <FeedImageTile
                   key={feed.fid}
                   feed={feed}
@@ -518,17 +552,19 @@ export default function UserProfilePage() {
           )}
 
           {/* Sentinel element for infinite scrolling / lazy loading */}
-          {feeds.length < rawFeedIds.length && (
+          {processedCount < rawFeedIds.length && (
             <div
               ref={sentinelRef}
-              className="py-6 flex justify-center items-center"
+              className="py-6 min-h-[60px] flex justify-center items-center w-full"
             >
-              {loadingMore && (
-                <div className="flex items-center gap-2 text-xs text-gray-400">
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                {loadingMore && (
                   <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  <span>Loading more posts...</span>
-                </div>
-              )}
+                )}
+                <span>
+                  {loadingMore ? "Loading more posts..." : "Scroll down for more"}
+                </span>
+              </div>
             </div>
           )}
         </div>

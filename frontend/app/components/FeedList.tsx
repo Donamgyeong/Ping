@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, memo } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/hooks/useAuth";
 import { formatLocalDate } from "@/utils/date";
-import { Plus, User, MapPin, Loader2 } from "lucide-react";
+import { Plus, User, MapPin, Loader2, Image as ImageIcon } from "lucide-react";
 
 interface FeedItem {
   fid: string;
@@ -30,6 +31,113 @@ interface FeedListProps {
   loadingMore?: boolean;
   onLoadMore?: () => void;
 }
+
+const FeedListItem = memo(function FeedListItem({
+  feed,
+  onClick,
+}: {
+  feed: FeedItem;
+  onClick: () => void;
+}) {
+  const { token } = useAuth();
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const itemRef = useRef<HTMLDivElement | null>(null);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  useEffect(() => {
+    const node = itemRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible || !token || !feed.images || feed.images.length === 0) return;
+    let isMounted = true;
+    let objectUrl: string | null = null;
+
+    const fetchImage = async () => {
+      try {
+        const response = await fetch(
+          `${API_URL}/file/get/${feed.images[0]}?thumbnail=true`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (!isMounted || !response.ok) return;
+        const blob = await response.blob();
+        objectUrl = URL.createObjectURL(blob);
+        if (isMounted) setImageUrl(objectUrl);
+      } catch (err) {
+        console.error("Failed to fetch feed list item thumbnail:", err);
+      }
+    };
+
+    fetchImage();
+
+    return () => {
+      isMounted = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [isVisible, feed.images, token, API_URL]);
+
+  const hasImage = feed.images && feed.images.length > 0;
+
+  return (
+    <div
+      ref={itemRef}
+      onClick={onClick}
+      className="cursor-pointer p-3.5 rounded-xl hover:bg-gray-800/80 transition-all border border-transparent hover:border-gray-700/60 group"
+    >
+      <div className="flex items-center mb-2">
+        <div className="w-7 h-7 rounded-full bg-gray-800 border border-gray-700 mr-2 flex justify-center items-center shrink-0">
+          <User className="w-3.5 h-3.5 text-gray-400" />
+        </div>
+        <span className="font-semibold text-sm text-gray-200 group-hover:text-blue-400 transition-colors truncate">
+          {feed.nickname || feed.uid}
+        </span>
+      </div>
+
+      <div className="flex gap-3 items-start mb-2">
+        <p className="text-sm text-gray-300 line-clamp-2 leading-relaxed flex-1">
+          {feed.content || "Ping"}
+        </p>
+
+        {hasImage && (
+          <div className="w-16 h-16 rounded-lg bg-black border border-gray-800 shrink-0 overflow-hidden relative shadow-md">
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt="Feed thumbnail"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              />
+            ) : (
+              <div className="w-full h-full bg-gray-900 animate-pulse flex items-center justify-center">
+                <ImageIcon className="w-4 h-4 text-gray-600 animate-pulse" />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <p className="text-[11px] text-gray-500">
+        {formatLocalDate(feed.post_date)}
+      </p>
+    </div>
+  );
+});
 
 export default function FeedList({
   feeds,
@@ -85,9 +193,9 @@ export default function FeedList({
   const displayCount = totalCount !== undefined ? totalCount : uniqueFeeds.length;
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl m-2">
+    <div className="h-full flex flex-col bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl m-2">
       {title && (
-        <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-950/60">
+        <div className="shrink-0 p-4 border-b border-gray-800 flex justify-between items-center bg-gray-950/60">
           <h2 className="text-base font-bold text-white flex items-center gap-2">
             <MapPin className="w-4 h-4 text-blue-500" />
             <span>{title}</span>
@@ -99,28 +207,13 @@ export default function FeedList({
       )}
 
       {uniqueFeeds.length > 0 ? (
-        <div className="divide-y divide-gray-800/60 max-h-[calc(100vh-14rem)] overflow-y-auto p-2 space-y-1">
+        <div className="flex-1 overflow-y-auto divide-y divide-gray-800/60 p-2 space-y-1">
           {uniqueFeeds.map((feed) => (
-            <div
+            <FeedListItem
               key={feed.fid}
+              feed={feed}
               onClick={() => onFeedItemClick(feed)}
-              className="cursor-pointer p-3.5 rounded-xl hover:bg-gray-800/80 transition-all border border-transparent hover:border-gray-700/60 group"
-            >
-              <div className="flex items-center mb-2">
-                <div className="w-8 h-8 rounded-full bg-gray-800 border border-gray-700 mr-2.5 flex justify-center items-center shrink-0">
-                  <User className="w-4 h-4 text-gray-400" />
-                </div>
-                <span className="font-semibold text-sm text-gray-200 group-hover:text-blue-400 transition-colors">
-                  {feed.nickname || feed.uid}
-                </span>
-              </div>
-              <p className="text-sm text-gray-300 mb-2 line-clamp-2 leading-relaxed">
-                {feed.content}
-              </p>
-              <p className="text-[11px] text-gray-500">
-                {formatLocalDate(feed.post_date)}
-              </p>
-            </div>
+            />
           ))}
 
           {/* Lazy Loading Sentinel */}
@@ -135,13 +228,13 @@ export default function FeedList({
           )}
         </div>
       ) : (
-        <div className="p-8 text-center text-sm text-gray-500">
+        <div className="flex-1 p-8 text-center text-sm text-gray-500 flex items-center justify-center">
           {emptyMessage}
         </div>
       )}
 
       {showCreateFeedButton && (
-        <div className="p-3 bg-gray-950/80 border-t border-gray-800">
+        <div className="shrink-0 p-3 bg-gray-950/80 border-t border-gray-800">
           <button
             onClick={handleCreateFeedClick}
             className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-600/20 text-sm cursor-pointer"

@@ -7,11 +7,15 @@ from router.chat import router as chat_router
 from router.file import router as file_router
 from router.auth import router as auth_router
 from router.comment import router as comment_router
+from config import settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from library.minio import minio_init
+    from library.redis import get_redis
+
+    client = get_redis()
 
     await minio_init()
 

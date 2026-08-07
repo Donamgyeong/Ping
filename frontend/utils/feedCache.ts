@@ -132,6 +132,52 @@ export async function fetchSingleFeedDetailCached(
   return null;
 }
 
+const addressCache = new Map<string, CacheEntry<string>>();
+
+/**
+ * Fetch administrative address up to Eup/Myeon/Dong with caching
+ */
+export async function fetchFeedAddressCached(
+  lat: number,
+  long: number,
+  authToken: string,
+  apiUrl: string,
+  ttlMs = DEFAULT_TTL_MS
+): Promise<string | null> {
+  if (lat == null || long == null || isNaN(Number(lat)) || isNaN(Number(long))) {
+    return null;
+  }
+
+  const cacheKey = `${Number(lat).toFixed(4)},${Number(long).toFixed(4)}`;
+  const entry = addressCache.get(cacheKey);
+  if (entry && Date.now() - entry.timestamp < ttlMs) {
+    return entry.data;
+  }
+
+  try {
+    const response = await fetch(
+      `${apiUrl}/feed/address?lat=${lat}&long=${long}`,
+      {
+        headers: { Authorization: `Bearer ${authToken}` },
+      }
+    );
+    if (response.ok) {
+      const data = await response.json();
+      if (data.result === "success") {
+        const parts = [data.sido_nm, data.sigungu_nm, data.emd_nm].filter(Boolean);
+        const formatted = parts.join(" ");
+        if (formatted) {
+          addressCache.set(cacheKey, { data: formatted, timestamp: Date.now() });
+          return formatted;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed to fetch address for coordinates:", err);
+  }
+  return null;
+}
+
 /**
  * Invalidate a specific feed in cache (e.g. after edit/delete)
  */
@@ -145,4 +191,5 @@ export function invalidateCachedFeed(fid: string): void {
 export function clearFeedCache(): void {
   feedDetailCache.clear();
   userProfileCache.clear();
+  addressCache.clear();
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   MapContainer,
   TileLayer,
@@ -13,7 +14,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { formatLocalDate } from "@/utils/date";
 import { useAuth } from "@/hooks/useAuth";
-import { fetchSingleFeedDetailCached } from "@/utils/feedCache";
+import { fetchSingleFeedDetailCached, fetchFeedAddressCached } from "@/utils/feedCache";
 import { MapPin } from "lucide-react";
 
 const setupLeafletIcons = () => {
@@ -84,10 +85,12 @@ interface MapProps {
     latitude: number;
     longitude: number;
   };
+  zoom?: number;
   feeds: FeedItem[];
   feedCounts?: FeedCountItem[];
   selectedFeed: FeedItem | null;
   onMapMoveEnd: (viewInfo: MapViewInfo) => void;
+  flyToCoords?: { lat: number; lng: number; zoom?: number } | null;
 }
 
 const MapEvents = ({
@@ -124,6 +127,23 @@ const MapEvents = ({
   return null;
 };
 
+// Sub-component to fly map to a region when flyToCoords changes
+const FlyToHandler = ({
+  flyToCoords,
+}: {
+  flyToCoords: { lat: number; lng: number; zoom?: number } | null | undefined;
+}) => {
+  const map = useMap();
+  useEffect(() => {
+    if (flyToCoords) {
+      map.flyTo([flyToCoords.lat, flyToCoords.lng], flyToCoords.zoom ?? 16, {
+        duration: 1.2,
+      });
+    }
+  }, [flyToCoords, map]);
+  return null;
+};
+
 // Map flyTo updater when selectedFeed changes
 const MapUpdater = ({
   selectedFeed,
@@ -144,9 +164,11 @@ const MapUpdater = ({
 
 // Sub-component for individual feed marker with hover image thumbnail popup
 const FeedMarker = ({ feed }: { feed: FeedItem }) => {
+  const router = useRouter();
   const { token } = useAuth();
   const [currentFeed, setCurrentFeed] = useState<FeedItem>(feed);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
   const [loadingImage, setLoadingImage] = useState(false);
   const [fetchAttempted, setFetchAttempted] = useState(false);
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -176,6 +198,18 @@ const FeedMarker = ({ feed }: { feed: FeedItem }) => {
       } catch (err) {
         console.error("Failed to load marker feed detail on hover:", err);
       }
+    }
+
+    // Fetch address up to Eup/Myeon/Dong
+    if (targetFeed.location?.lat && targetFeed.location?.long) {
+      fetchFeedAddressCached(
+        targetFeed.location.lat,
+        targetFeed.location.long,
+        token,
+        API_URL
+      ).then((addr) => {
+        if (addr) setAddress(addr);
+      });
     }
 
     // Fetch image if present
@@ -209,6 +243,12 @@ const FeedMarker = ({ feed }: { feed: FeedItem }) => {
     };
   }, [imageUrl]);
 
+  const handlePopupClick = () => {
+    if (currentFeed?.fid) {
+      router.push(`/feed/${currentFeed.fid}`);
+    }
+  };
+
   return (
     <Marker
       icon={customPingMarkerIcon}
@@ -221,14 +261,17 @@ const FeedMarker = ({ feed }: { feed: FeedItem }) => {
       }}
     >
       <Popup className="custom-dark-popup">
-        <div className="p-1 min-w-[170px] max-w-[220px]">
+        <div
+          onClick={handlePopupClick}
+          className="p-1 min-w-[170px] max-w-[220px] cursor-pointer group/popup hover:opacity-90 transition-opacity"
+        >
           {currentFeed.images && currentFeed.images.length > 0 ? (
-            <div className="w-full h-32 mb-2.5 overflow-hidden rounded-xl bg-black border border-gray-800 shadow-inner flex items-center justify-center relative">
+            <div className="w-full h-32 mb-2.5 overflow-hidden rounded-xl bg-black border border-gray-800 shadow-inner flex items-center justify-center relative group-hover/popup:border-blue-500/50 transition-colors">
               {imageUrl ? (
                 <img
                   src={imageUrl}
                   alt="Feed Thumbnail"
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover group-hover/popup:scale-105 transition-transform duration-300"
                 />
               ) : loadingImage ? (
                 <div className="flex flex-col items-center gap-1.5 text-xs text-gray-400">
@@ -242,17 +285,23 @@ const FeedMarker = ({ feed }: { feed: FeedItem }) => {
               )}
             </div>
           ) : (
-            <div className="w-full h-14 mb-2 rounded-xl bg-black border border-gray-800 flex items-center justify-center text-gray-600">
+            <div className="w-full h-14 mb-2 rounded-xl bg-black border border-gray-800 flex items-center justify-center text-gray-600 group-hover/popup:border-blue-500/50 transition-colors">
               <MapPin className="w-5 h-5 text-blue-500/60" />
             </div>
           )}
           <div className="space-y-1">
-            <p className="font-bold text-xs text-white truncate">
+            <p className="font-bold text-xs text-white truncate group-hover/popup:text-blue-400 transition-colors">
               {currentFeed.nickname || currentFeed.uid}
             </p>
             <p className="text-xs text-gray-300 leading-relaxed line-clamp-2">
               {currentFeed.content || "Loading ping..."}
             </p>
+            {address && (
+              <div className="flex items-center gap-1 text-[10px] text-blue-300 font-medium pt-0.5 truncate">
+                <MapPin className="w-3 h-3 text-blue-400 shrink-0" />
+                <span className="truncate">{address}</span>
+              </div>
+            )}
             <p className="text-[10px] text-gray-500 pt-0.5">
               {formatLocalDate(currentFeed.post_date)}
             </p>
@@ -285,10 +334,12 @@ const MapContent = ({
   feedCounts,
   selectedFeed,
   onMapMoveEnd,
+  flyToCoords,
 }: Omit<MapProps, "location">) => {
   return (
     <>
       <MapUpdater selectedFeed={selectedFeed} />
+      <FlyToHandler flyToCoords={flyToCoords} />
       <MapEvents onMoveEnd={onMapMoveEnd} />
       {feedCounts && feedCounts.length > 0
         ? feedCounts.map((item, idx) => (
@@ -317,8 +368,22 @@ const MemoizedMap = React.memo(Map, (prevProps, nextProps) => {
     JSON.stringify(prevProps.feedCounts) === JSON.stringify(nextProps.feedCounts);
   const selectedFeedIsEqual =
     prevProps.selectedFeed?.fid === nextProps.selectedFeed?.fid;
+  const zoomIsEqual = prevProps.zoom === nextProps.zoom;
+  const locationIsEqual =
+    prevProps.location.latitude === nextProps.location.latitude &&
+    prevProps.location.longitude === nextProps.location.longitude;
+  const flyToCoordsIsEqual =
+    prevProps.flyToCoords?.lat === nextProps.flyToCoords?.lat &&
+    prevProps.flyToCoords?.lng === nextProps.flyToCoords?.lng;
 
-  return feedsAreEqual && countsAreEqual && selectedFeedIsEqual;
+  return (
+    feedsAreEqual &&
+    countsAreEqual &&
+    selectedFeedIsEqual &&
+    zoomIsEqual &&
+    locationIsEqual &&
+    flyToCoordsIsEqual
+  );
 });
 
 MemoizedMap.displayName = "Map";
@@ -327,10 +392,12 @@ export default MemoizedMap;
 
 function Map({
   location,
+  zoom = 13,
   feeds,
   feedCounts,
   selectedFeed,
   onMapMoveEnd,
+  flyToCoords,
 }: MapProps) {
   const [isClient, setIsClient] = useState(false);
 
@@ -346,7 +413,7 @@ function Map({
   return (
     <MapContainer
       center={[location.latitude, location.longitude]}
-      zoom={13}
+      zoom={zoom}
       minZoom={7}
       scrollWheelZoom={true}
       className="absolute inset-0"
@@ -360,6 +427,7 @@ function Map({
         feedCounts={feedCounts}
         selectedFeed={selectedFeed}
         onMapMoveEnd={onMapMoveEnd}
+        flyToCoords={flyToCoords}
       />
     </MapContainer>
   );

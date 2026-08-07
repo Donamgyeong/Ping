@@ -17,6 +17,10 @@ import {
   Columns,
 } from "lucide-react";
 
+const RegionDropdown = dynamic(() => import("./components/RegionDropdown"), {
+  ssr: false,
+});
+
 interface BBoxPayload {
   SW: {
     lat: number;
@@ -52,7 +56,7 @@ interface FeedItem {
   private: boolean;
 }
 
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 5;
 
 const Map = dynamic(() => import("./components/Map"), {
   ssr: false,
@@ -89,9 +93,26 @@ export default function Home() {
   const [mobileView, setMobileView] = useState<"split" | "map" | "list">(
     "split"
   );
+  const [flyToCoords, setFlyToCoords] = useState<{
+    lat: number;
+    lng: number;
+    zoom?: number;
+  } | null>(null);
   const mapMoveTimeout = useRef<NodeJS.Timeout | null>(null);
   const lastFetchedBBoxRef = useRef<string>("");
   const addressCacheRef = useRef<Record<string, string>>({});
+
+  const handleRegionSelect = useCallback(
+    (lat: number, lng: number, label: string) => {
+      // Use zoom level >= 16 so backend returns individual feeds instead of count aggregates
+      const parts = label.split(" › ").length;
+      const zoom = parts === 1 ? 16 : parts === 2 ? 16 : 17;
+      setFlyToCoords({ lat, lng, zoom });
+      // Update current address display
+      setCurrentAddress(label.replace(/ › /g, " "));
+    },
+    []
+  );
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -246,6 +267,32 @@ export default function Home() {
 
   useEffect(() => {
     if (isLoggedIn) {
+      // Attempt to restore saved location and zoom from sessionStorage
+      try {
+        const savedCenterStr = sessionStorage.getItem("map_last_center");
+        const savedZoomStr = sessionStorage.getItem("map_last_zoom");
+
+        if (savedCenterStr) {
+          const savedCenter = JSON.parse(savedCenterStr);
+          if (
+            typeof savedCenter.latitude === "number" &&
+            typeof savedCenter.longitude === "number"
+          ) {
+            setLocation(savedCenter);
+            if (savedZoomStr) {
+              const parsedZoom = Number(savedZoomStr);
+              if (!isNaN(parsedZoom)) {
+                setCurrentZoom(parsedZoom);
+              }
+            }
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.error("Failed to restore map position from sessionStorage", e);
+      }
+
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (position) => {
@@ -285,7 +332,7 @@ export default function Home() {
           long: location.longitude + lngDelta,
         },
       };
-      const initialZoom = 13;
+      const initialZoom = currentZoom || 13;
       fetchAddressForPosition(location.latitude, location.longitude, initialZoom, token);
       const bboxKey = `${initialBBox.SW.lat.toFixed(4)},${initialBBox.SW.long.toFixed(4)},${initialBBox.NE.lat.toFixed(4)},${initialBBox.NE.long.toFixed(4)},z${initialZoom}`;
       if (lastFetchedBBoxRef.current === "") {
@@ -293,7 +340,7 @@ export default function Home() {
         fetchFeedsByBBox(initialBBox, initialZoom, token);
       }
     }
-  }, [isLoggedIn, location, token, fetchFeedsByBBox, fetchAddressForPosition]);
+  }, [isLoggedIn, location, token, fetchFeedsByBBox, fetchAddressForPosition, currentZoom]);
 
   // Lazy loading handler when scrolling down in FeedList
   const handleLoadMore = useCallback(async () => {
@@ -372,6 +419,17 @@ export default function Home() {
       if (!token) return;
 
       const roundedZoom = Math.round(viewInfo.zoom);
+      setCurrentZoom(roundedZoom);
+
+      try {
+        sessionStorage.setItem(
+          "map_last_center",
+          JSON.stringify(viewInfo.center)
+        );
+        sessionStorage.setItem("map_last_zoom", String(roundedZoom));
+      } catch (e) {
+        console.error("Failed to save map position to sessionStorage", e);
+      }
 
       // 모든 줌 레벨에서 주소 표시 (단계별 단위로)
       fetchAddressForPosition(
@@ -457,49 +515,17 @@ export default function Home() {
 
   return (
     <div className="flex flex-col md:flex-row h-[calc(100vh-4rem-3.5rem)] md:h-[calc(100vh-4rem)] w-full overflow-hidden bg-black relative">
-      <div className="md:hidden fixed bottom-16 left-1/2 -translate-x-1/2 z-[9999] bg-gray-900/95 border border-gray-800 backdrop-blur-lg p-1.5 rounded-full shadow-2xl flex items-center gap-1 text-xs">
-        <button
-          onClick={() => setMobileView("split")}
-          className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all ${
-            mobileView === "split"
-              ? "bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30"
-              : "text-gray-400 hover:text-white"
-          }`}
-        >
-          <Columns className="w-3.5 h-3.5" />
-          <span>분할</span>
-        </button>
-        <button
-          onClick={() => setMobileView("map")}
-          className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all ${
-            mobileView === "map"
-              ? "bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30"
-              : "text-gray-400 hover:text-white"
-          }`}
-        >
-          <MapIcon className="w-3.5 h-3.5" />
-          <span>지도</span>
-        </button>
-        <button
-          onClick={() => setMobileView("list")}
-          className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all ${
-            mobileView === "list"
-              ? "bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30"
-              : "text-gray-400 hover:text-white"
-          }`}
-        >
-          <List className="w-3.5 h-3.5" />
-          <span>목록</span>
-        </button>
-      </div>
 
+      {/* Left Panel: Feed List or Feed Detail */}
       <div
-        className={`w-full md:w-1/5 shrink-0 bg-black border-t md:border-t-0 md:border-r border-gray-800/80 overflow-y-auto order-2 md:order-1 ${
+        className={`w-full md:w-[400px] md:min-w-[400px] shrink-0 bg-black border-t md:border-t-0 md:border-r border-gray-800/80 overflow-hidden flex flex-col order-2 md:order-1 transition-[height] duration-300 ease-in-out relative ${
           mobileView === "map"
-            ? "hidden md:block"
-            : mobileView === "split"
-            ? "h-1/4 md:h-full"
-            : "h-full md:h-full"
+            ? "hidden md:flex md:flex-col md:h-full"
+            : mobileView === "list"
+            ? "h-full md:flex md:flex-col md:h-full"
+            : selectedFeed
+            ? "h-[60%] md:flex md:flex-col md:h-full"
+            : "h-[40%] md:flex md:flex-col md:h-full"
         }`}
       >
         {selectedFeed ? (
@@ -519,23 +545,100 @@ export default function Home() {
             title="Nearby Pings"
           />
         )}
+
+        {/* Toggle bar shown only in list mode, since map panel (with the toggle) is hidden */}
+        {mobileView === "list" && (
+          <div className="md:hidden sticky bottom-0 left-0 right-0 bg-gray-950/95 border-t border-gray-800 py-2 flex justify-center z-50">
+            <div className="bg-gray-900/95 border border-gray-800 backdrop-blur-lg p-1.5 rounded-full shadow-2xl flex items-center gap-1 text-xs">
+              <button
+                onClick={() => setMobileView("split")}
+                className="px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all text-gray-400 hover:text-white"
+              >
+                <Columns className="w-3.5 h-3.5" />
+                <span>분할</span>
+              </button>
+              <button
+                onClick={() => setMobileView("map")}
+                className="px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all text-gray-400 hover:text-white"
+              >
+                <MapIcon className="w-3.5 h-3.5" />
+                <span>지도</span>
+              </button>
+              <button
+                onClick={() => setMobileView("list")}
+                className="px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30"
+              >
+                <List className="w-3.5 h-3.5" />
+                <span>목록</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* Right Panel: Map */}
       <div
-        className={`w-full relative bg-gray-950 order-1 md:order-2 ${
+        className={`w-full relative bg-gray-950 order-1 md:order-2 md:flex-1 transition-[height] duration-300 ease-in-out ${
           mobileView === "list"
-            ? "hidden md:block md:flex-1 md:h-full"
-            : mobileView === "split"
-            ? "h-3/4 md:h-full md:flex-1 shrink-0 md:shrink"
-            : "h-full md:h-full md:flex-1"
+            ? "hidden md:block md:h-full"
+            : mobileView === "map"
+            ? "h-full"
+            : selectedFeed
+            ? "h-[40%] md:h-full"
+            : "h-[60%] md:h-full"
         }`}
       >
+        {/* Mobile view toggle — floats inside map panel, never covers list/detail */}
+        <div className="md:hidden absolute bottom-3 left-1/2 -translate-x-1/2 z-[1001] bg-gray-900/95 border border-gray-800 backdrop-blur-lg p-1.5 rounded-full shadow-2xl flex items-center gap-1 text-xs">
+          <button
+            onClick={() => setMobileView("split")}
+            className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all ${
+              mobileView === "split"
+                ? "bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30"
+                : "text-gray-400 hover:text-white"
+            }`}
+          >
+            <Columns className="w-3.5 h-3.5" />
+            <span>분할</span>
+          </button>
+          <button
+            onClick={() => setMobileView("map")}
+            className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all ${
+              mobileView === "map"
+                ? "bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30"
+                : "text-gray-400 hover:text-white"
+            }`}
+          >
+            <MapIcon className="w-3.5 h-3.5" />
+            <span>지도</span>
+          </button>
+          <button
+            onClick={() => setMobileView("list")}
+            className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all ${
+              mobileView === "list"
+                ? "bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30"
+                : "text-gray-400 hover:text-white"
+            }`}
+          >
+            <List className="w-3.5 h-3.5" />
+            <span>목록</span>
+          </button>
+        </div>
+
         {error && (
           <div className="absolute top-4 left-4 z-20 bg-red-950/80 border border-red-800 text-red-200 text-xs px-4 py-2 rounded-xl backdrop-blur-md shadow-lg flex items-center gap-2">
             <MapPin className="w-4 h-4 text-red-400" />
             <span>{error}</span>
           </div>
         )}
+
+        {/* Region search dropdown — top-left of map */}
+        {isLoggedIn && (
+          <div className="absolute top-4 left-4 z-[1002]">
+            <RegionDropdown onRegionSelect={handleRegionSelect} />
+          </div>
+        )}
+
         {currentAddress && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-gray-900/90 border border-gray-800/90 backdrop-blur-md px-4 py-1.5 rounded-full shadow-2xl flex items-center gap-1.5 text-xs text-gray-200 pointer-events-none">
             <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
@@ -545,10 +648,12 @@ export default function Home() {
         {location ? (
           <Map
             location={location}
+            zoom={currentZoom}
             feeds={mapFeeds}
             feedCounts={feedCounts}
             selectedFeed={selectedFeed}
             onMapMoveEnd={handleMapMoveEnd}
+            flyToCoords={flyToCoords}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-gray-500 text-sm">

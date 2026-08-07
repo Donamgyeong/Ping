@@ -10,6 +10,8 @@ from geoalchemy2.functions import (
     ST_AsGeoJSON,
     ST_MakePoint,
     ST_SetSRID,
+    ST_Union,
+    ST_AsText,
 )
 from geoalchemy2.shape import from_shape
 from redis.asyncio import Redis
@@ -20,7 +22,6 @@ from library.model import *
 from uuid import uuid4
 from datetime import datetime, timezone
 import time
-import geohash2
 import json
 
 
@@ -241,6 +242,89 @@ async def get_address_from_position(
     address = result.first()
 
     return address
+
+
+async def get_sido_list(db: AsyncSession) -> list[Row]:
+    stmt = select(SIDO.sido_cd, SIDO.sido_nm).order_by(SIDO.sido_cd)
+    result = await db.execute(stmt)
+    return list(result.all())
+
+
+async def get_sigungu_list(db: AsyncSession, sido_cd: str) -> list[Row]:
+    stmt = (
+        select(SIGUNGU.sigungu_cd, SIGUNGU.sgg_nm)
+        .where(func.left(SIGUNGU.sigungu_cd, 2) == sido_cd)
+        .order_by(SIGUNGU.sigungu_cd)
+    )
+    result = await db.execute(stmt)
+    return list(result.all())
+
+
+async def get_emd_list(db: AsyncSession, sigungu_cd: str) -> list[Row]:
+    stmt = (
+        select(EMD_Boundaries.emd_cd, EMD_Boundaries.emd_nm)
+        .where(func.left(EMD_Boundaries.emd_cd, 5) == sigungu_cd)
+        .order_by(EMD_Boundaries.emd_cd)
+    )
+    result = await db.execute(stmt)
+    return list(result.all())
+
+
+async def get_region_centroid(
+    db: AsyncSession, code: str
+) -> tuple[float, float] | None:
+    import logging
+    from sqlalchemy import func as sqlfunc
+
+    code_len = len(code)
+    logging.info(f"[get_region_centroid] code={code!r} len={code_len}")
+
+    # Build the centroid subquery using ST_X/ST_Y to avoid WKT parsing issues
+    if code_len == 2:
+        filter_cond = func.left(EMD_Boundaries.emd_cd, 2) == code
+    elif code_len == 5:
+        filter_cond = func.left(EMD_Boundaries.emd_cd, 5) == code
+    elif code_len == 8:
+        filter_cond = EMD_Boundaries.emd_cd == code
+    else:
+        logging.warning(f"[get_region_centroid] Unsupported code length: {code_len}")
+        return None
+
+    # Method 1: ST_X/ST_Y on the union centroid
+    try:
+        union_centroid = ST_Centroid(ST_Union(EMD_Boundaries.geom))
+        stmt = select(
+            sqlfunc.ST_X(union_centroid).label("lng"),
+            sqlfunc.ST_Y(union_centroid).label("lat"),
+        ).where(filter_cond)
+
+        result = await db.execute(stmt)
+        row = result.first()
+        logging.info(f"[get_region_centroid] Method1 row={row}")
+
+        if row and row.lat is not None and row.lng is not None:
+            return float(row.lat), float(row.lng)
+    except Exception as e:
+        logging.warning(f"[get_region_centroid] Method1 failed: {e}")
+
+    # Method 2: Fallback — average of individual polygon centroids
+    try:
+        stmt2 = select(
+            sqlfunc.avg(sqlfunc.ST_X(ST_Centroid(EMD_Boundaries.geom))).label("lng"),
+            sqlfunc.avg(sqlfunc.ST_Y(ST_Centroid(EMD_Boundaries.geom))).label("lat"),
+        ).where(filter_cond)
+
+        result2 = await db.execute(stmt2)
+        row2 = result2.first()
+        logging.info(f"[get_region_centroid] Method2 row={row2}")
+
+        if row2 and row2.lat is not None and row2.lng is not None:
+            return float(row2.lat), float(row2.lng)
+    except Exception as e:
+        logging.error(f"[get_region_centroid] Method2 failed: {e}")
+
+    logging.warning(f"[get_region_centroid] No result for code={code!r}")
+    return None
 
 
 def get_current_time_bucket(interval_minutes: int = 10) -> str:

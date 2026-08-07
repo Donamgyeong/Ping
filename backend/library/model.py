@@ -172,3 +172,35 @@ class ResponseAddress(ResponseBase):
     sido_nm: str
     sigungu_nm: str
     emd_nm: str
+
+
+class SidoItem(BaseModel):
+    sido_cd: str
+    sido_nm: str
+
+
+class SigunguItem(BaseModel):
+    sigungu_cd: str
+    sgg_nm: str
+
+
+class EmdItem(BaseModel):
+    emd_cd: str
+    emd_nm: str
+
+
+class ResponseSidoList(ResponseBase):
+    items: list[SidoItem]
+
+
+class ResponseSigunguList(ResponseBase):
+    items: list[SigunguItem]
+
+
+class ResponseEmdList(ResponseBase):
+    items: list[EmdItem]
+
+
+class ResponseCentroid(ResponseBase):
+    lat: float
+    lng: float

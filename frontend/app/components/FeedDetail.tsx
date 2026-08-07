@@ -82,7 +82,7 @@ export default function FeedDetail({ feed, onBack, token }: FeedDetailProps) {
         if (response.ok) {
           const data = await response.json();
           if (data.result === "success") {
-            const formatted = [data.sido_nm, data.sigungu_nm]
+            const formatted = [data.sido_nm, data.sigungu_nm, data.emd_nm]
               .filter(Boolean)
               .join(" ");
             setAddress(formatted || null);
@@ -254,7 +254,7 @@ export default function FeedDetail({ feed, onBack, token }: FeedDetailProps) {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-black m-3 p-2 text-white">
+    <div className="flex-1 h-full overflow-y-auto bg-black m-3 p-2 pb-16 md:pb-2 text-white">
       <button
         onClick={onBack}
         className="mb-4 text-blue-400 hover:text-blue-300 transition-colors"
