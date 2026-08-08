@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { Radio, Rss, MessageSquare, User, LogOut, LogIn } from 'lucide-react';
+import { Radio, Rss, MessageSquare, User, LogOut, LogIn, Grid } from 'lucide-react';
 
 export default function Navbar() {
   const { token, uid, logout } = useAuth();
@@ -38,6 +38,17 @@ export default function Navbar() {
                 >
                   <Rss className="w-4 h-4" />
                   <span>Feed</span>
+                </Link>
+                <Link
+                  href="/region"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                    pathname.startsWith('/region') || pathname.startsWith('/feed/region')
+                      ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-900/60'
+                  }`}
+                >
+                  <Grid className="w-4 h-4" />
+                  <span>Region</span>
                 </Link>
                 <Link
                   href="/chat"
@@ -121,6 +132,17 @@ export default function Navbar() {
         >
           <Rss className="w-5 h-5" />
           <span className="text-[10px]">Feed</span>
+        </Link>
+        <Link
+          href="/region"
+          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+            pathname.startsWith('/region') || pathname.startsWith('/feed/region')
+              ? 'text-blue-400 font-semibold'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <Grid className="w-5 h-5" />
+          <span className="text-[10px]">Region</span>
         </Link>
         <Link
           href="/chat"

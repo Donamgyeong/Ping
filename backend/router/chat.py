@@ -242,7 +242,7 @@ async def redis_reader(websocket: WebSocket, pubsub):
                 ignore_subscribe_messages=True, timeout=None
             )
             if message:
-                await websocket.send_text(message["data"].decode())
+                await websocket.send_text(message["data"])
     except Exception as e:
         logging.warning(f"Redis reader error: {e}")
 
@@ -255,7 +255,7 @@ async def client_reader(
             data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
             message_data = json.loads(data)
 
-            if message_data.get("type") != "ping":
+            if message_data.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
             else:
                 cid = message_data.get("cid")

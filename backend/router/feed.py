@@ -190,6 +190,33 @@ async def get_feed_id_by_user(
         )
 
 
+@router.get("/hjd/get/{code}")
+async def get_feed_by_hjd(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    code: str,
+    redis: Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
+) -> ResponseFeedID:
+    user = await validate_token(token, db)
+    try:
+        feeds = await get_feeds_by_codes(db, redis, [code])
+        result = list[FeedID]()
+        for feed in feeds:
+            feedID = FeedID(
+                fid=feed["feed_id"], uid=feed["uid"], post_date=feed["post_date"]
+            )
+            result.append(feedID)
+        return ResponseFeedID(result="success", feedid=result)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting feeds for hjd {code}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
 @router.get("/get/{fid}")
 async def get_feed(
     token: Annotated[str, Depends(oauth2_scheme)],

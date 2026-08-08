@@ -85,15 +85,20 @@ async def get_feeds_by_codes(
             data = json.loads(feed)
             feeds.extend(data)
         else:
-            stmt = select(Feed).where(
-                EMD_Boundaries.emd_cd == hjd,
-                ST_Contains(
-                    EMD_Boundaries.geom,
-                    Feed.location,
-                ),
+            stmt = (
+                select(Feed)
+                .join(EMD_Boundaries, EMD_Boundaries.emd_cd.startswith(hjd))
+                .where(
+                    ST_Contains(
+                        EMD_Boundaries.geom,
+                        Feed.location,
+                    ),
+                )
             )
             result = await db.scalars(stmt)
             feed_list = list(map(lambda x: x.as_dict(), result.all()))
+
+            feeds.extend(feed_list)
 
             score = await redis.zscore(key, hjd)
             if not score:
@@ -109,8 +114,6 @@ async def get_feeds_by_codes(
                     json.dumps(feed_list, default=datetime_to_json_formatting),
                 )
                 await redis.expire("feed:cached:" + hjd, 60)
-
-            feeds.extend(feed_list)
 
     return feeds
 
