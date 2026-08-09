@@ -21,7 +21,8 @@ from service.feed_service import (
     get_region_centroid,
 )
 from service.auth_service import validate_token
-from service.user_service import is_followed, get_following
+from service.user_service import is_followed, get_following, get_profile_by_uid
+from service.notification_service import publish_notification
 from datetime import datetime, timedelta, timezone
 from geoalchemy2.shape import from_shape, to_shape
 from library.db import get_db
@@ -39,11 +40,27 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 async def new(
     token: Annotated[str, Depends(oauth2_scheme)],
     feed: FeedCreate,
+    redis: Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db),
 ) -> ResponseID:
     user = await validate_token(token, db)
+    profile = await get_profile_by_uid(db, user.uid)
     try:
+        if not profile:
+            raise Exception
         feed_id = await create_feed(db, user.uid, feed)
+
+        followers = await get_following(db, user.uid)
+        for follower in followers:
+            noti = Noti(
+                noti_id="None",
+                type="Feed",
+                receiver=follower.uid,
+                content="New Feed is posted by " + profile.nickname,
+                link="/feed/" + feed_id,
+                date=datetime.now(),
+            )
+            await publish_notification(db, redis, noti)
         await db.commit()
         return ResponseID(result="success", id=feed_id)
     except HTTPException as e:

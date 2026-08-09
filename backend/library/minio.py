@@ -1,6 +1,7 @@
 from minio import Minio, S3Error
 from config import settings
 from typing import BinaryIO
+from datetime import timedelta, datetime
 import asyncio
 
 client = Minio(
@@ -53,6 +54,21 @@ async def get_from_minio(bucket: str, object_name: str):
     def _get():
         response = client.get_object(bucket_name=bucket, object_name=object_name)
         return response
+
+    return await asyncio.to_thread(_get)
+
+
+async def get_url_from_minio(bucket: str, object_name: str) -> tuple[str, datetime]:
+    def _get():
+        return (
+            client.get_presigned_url(
+                method="GET",
+                bucket_name=bucket,
+                object_name=object_name,
+                expires=timedelta(minutes=5),
+            ),
+            datetime.now() + timedelta(minutes=5),
+        )
 
     return await asyncio.to_thread(_get)
 

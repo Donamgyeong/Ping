@@ -2,6 +2,17 @@ from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
 
 
+class Noti(BaseModel):
+    noti_id: str
+    type: str
+    receiver: str
+    content: str
+    link: str
+    date: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class Location(BaseModel):
     lat: float
     long: float
@@ -204,3 +215,16 @@ class ResponseEmdList(ResponseBase):
 class ResponseCentroid(ResponseBase):
     lat: float
     lng: float
+
+
+class ResponseNotification(ResponseBase):
+    notifications: list[Noti]
+
+
+class ResponseCnt(ResponseBase):
+    cnt: int
+
+
+class ResponseFileURL(ResponseBase):
+    url: str
+    valid_until: datetime

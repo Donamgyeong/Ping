@@ -89,12 +89,13 @@ services:
       REDIS_HOST: ping-redis
       REDIS_PASS: ${REDIS_PASS}
       REDIS_PORT: 6379
-      S3_ENDPOINT: ping-minio:9000
+      S3_ENDPOINT: minio:9000
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET: ping-bucket
       S3_CACHE_BUCKET: ping-cache-bucket
       S3_GEO_BUCKET: ping-geo-bucket
+      EXTERNAL_HOST: ${EXTERNAL_HOST}
       SECRET_KEY: ${SECRET_KEY}
       EXPIRE_TIME: ${EXPIRE_TIME}
     ports:
@@ -121,12 +122,13 @@ services:
       REDIS_HOST: ping-redis
       REDIS_PASS: ${REDIS_PASS}
       REDIS_PORT: 6379
-      S3_ENDPOINT: ping-minio:9000
+      S3_ENDPOINT: minio:9000
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET: ping-bucket
       S3_CACHE_BUCKET: ping-cache-bucket
       S3_GEO_BUCKET: ping-geo-bucket
+      EXTERNAL_HOST: ${EXTERNAL_HOST}
       SECRET_KEY: ${SECRET_KEY}
       EXPIRE_TIME: ${EXPIRE_TIME}
     ports:

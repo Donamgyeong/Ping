@@ -187,3 +187,16 @@ class SIGUNGU(Base):
 
     sigungu_cd: Mapped[str] = mapped_column(String(5), primary_key=True)
     sgg_nm: Mapped[str] = mapped_column(String(100), nullable=False)
+
+
+class Notification(Base):
+    __tablename__ = "notification"
+
+    noti_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    type: Mapped[str] = mapped_column(String(10), nullable=False)
+    receiver: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.uid", ondelete="CASCADE"), nullable=False
+    )
+    content: Mapped[str] = mapped_column(String(300), nullable=False)
+    link: Mapped[str] = mapped_column(String(100), nullable=True)
+    date: Mapped[DateTime] = mapped_column(DateTime, nullable=False)

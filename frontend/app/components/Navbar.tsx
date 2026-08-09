@@ -1,14 +1,43 @@
 "use client";
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { Radio, Rss, MessageSquare, User, LogOut, LogIn, Grid } from 'lucide-react';
+import { Radio, Rss, MessageSquare, User, LogOut, LogIn, Grid, Bell } from 'lucide-react';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function Navbar() {
-  const { token, uid, logout } = useAuth();
+  const { token, uid, logout, authFetch } = useAuth();
   const isLoggedIn = !!token;
   const pathname = usePathname();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setUnreadCount(0);
+      return;
+    }
+
+    const fetchUnreadCount = async () => {
+      try {
+        const res = await authFetch(`${API_URL}/notification/get/count`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.result === 'OK' && typeof data.cnt === 'number') {
+            setUnreadCount(data.cnt > 0 ? data.cnt : 0);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch notification count:', error);
+      }
+    };
+
+    fetchUnreadCount();
+    const interval = setInterval(fetchUnreadCount, 15000);
+    return () => clearInterval(interval);
+  }, [isLoggedIn, pathname, authFetch]);
 
   return (
     <>
@@ -80,13 +109,31 @@ export default function Navbar() {
             {/* Right Action */}
             <div className="flex items-center">
               {isLoggedIn ? (
-                <button
-                  onClick={logout}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-red-400 bg-gray-900 hover:bg-red-950/30 border border-gray-800 hover:border-red-900/50 px-3.5 py-2 rounded-xl transition-all cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>Log Out</span>
-                </button>
+                <div className="flex items-center space-x-3">
+                  <Link
+                    href="/notification"
+                    title="알림 목록"
+                    className={`relative p-2.5 rounded-xl border transition-all ${
+                      pathname.startsWith('/notification')
+                        ? 'bg-blue-600/20 text-blue-400 border-blue-500/30'
+                        : 'bg-gray-900/80 text-gray-400 hover:text-white border-gray-800 hover:bg-gray-900'
+                    }`}
+                  >
+                    <Bell className="w-4 h-4" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full h-4 min-w-[16px] px-1 ring-2 ring-gray-950 animate-pulse">
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
+                    )}
+                  </Link>
+                  <button
+                    onClick={logout}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-red-400 bg-gray-900 hover:bg-red-950/30 border border-gray-800 hover:border-red-900/50 px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Log Out</span>
+                  </button>
+                </div>
               ) : (
                 <div className="flex items-center space-x-3">
                   <Link
@@ -155,6 +202,26 @@ export default function Navbar() {
           <MessageSquare className="w-5 h-5" />
           <span className="text-[10px]">Chat</span>
         </Link>
+        {isLoggedIn && (
+          <Link
+            href="/notification"
+            className={`relative flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+              pathname.startsWith('/notification')
+                ? 'text-blue-400 font-semibold'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <div className="relative">
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-2 flex items-center justify-center text-[9px] font-bold text-white bg-red-500 rounded-full h-3.5 min-w-[14px] px-1 ring-1 ring-gray-950 animate-pulse">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px]">Alerts</span>
+          </Link>
+        )}
         <Link
           href={isLoggedIn ? `/user/profile/${uid}` : '/user/login'}
           className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
@@ -170,3 +237,4 @@ export default function Navbar() {
     </>
   );
 }
+

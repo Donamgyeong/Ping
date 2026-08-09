@@ -105,3 +105,14 @@ CREATE TABLE chat_message (
     content TEXT NOT NULL,
     message_date TIMESTAMP NOT NULL
 );
+
+CREATE TABLE notification (
+    noti_id CHAR(36) PRIMARY KEY,
+    type CHAR(10) NOT NULL,
+    receiver CHAR(36) NOT NULL REFERENCES users (uid) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    link CHAR(100) NOT NULL,
+    date TIMESTAMP NOT NULL
+);
+
+CREATE INDEX receiver_noti ON notification (receiver);
