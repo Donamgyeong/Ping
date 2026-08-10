@@ -287,5 +287,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.next
-geodata/geodata.geojson
+*.dbf
+*.prj
+*.sbn
+*.sbx
+*.shp
+*.shx
+*.geojson

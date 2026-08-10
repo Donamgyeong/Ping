@@ -10,25 +10,14 @@ DB_URL = os.getenv("DB_URL")
 engine = create_engine(DB_URL)
 
 ZIP_FILE_PATH = "./data/"
-EXTRACT_DIR = "./data/extracted"
 TABLE_NAME = "emd_boundaries"
 
 
 def run_pipeline():
-    print("[1/4] SHP 파일 압축 해제...")
-
-    for root, dirs, files in os.walk(ZIP_FILE_PATH):
-        for file in files:
-            if file.endswith(".zip"):
-                zip_path = os.path.join(root, file)
-                print(f"압축 해제 중: {zip_path}")
-                with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                    zip_ref.extractall(EXTRACT_DIR)
-
     # 2. SHP 파일 찾기 및 GeoPandas 로드
     shp_files = [
-        os.path.join(EXTRACT_DIR, f)
-        for f in os.listdir(EXTRACT_DIR)
+        os.path.join(ZIP_FILE_PATH, f)
+        for f in os.listdir(ZIP_FILE_PATH)
         if f.endswith(".shp")
     ]
 
@@ -46,17 +35,18 @@ def run_pipeline():
 
         print("[3/4] WGS84 (EPSG:4326) 좌표계 변환 중...")
         gdf = gdf.to_crs(epsg=4326)
-        gdf.rename(columns={"EMD_CD": "emd_cd", "EMD_NM": "emd_nm"}, inplace=True)
+        gdf.rename(columns={"BJCD": "emd_cd", "NAME": "emd_nm"}, inplace=True)
+        gdf_n = gdf.drop(columns=["UFID", "DIVI", "FMTA", "SCLS"])
+        gdf_n["emd_cd"] = gdf_n["emd_cd"].str[0:8]
 
-        mask = gdf["emd_cd"].str.len() == 8
-        gdf_n = gdf.loc[mask, :]
+        gdf_n = gdf_n.astype({"emd_cd": str})
 
         # 4. PostGIS 데이터베이스 적재
         print(f"[4/4] PostGIS 테이블({TABLE_NAME}) 적재 및 공간 인덱스 생성...")
         gdf_n.to_postgis(
             name=TABLE_NAME,
             con=engine,
-            if_exists="append",  # 기존 테이블 덮어쓰기 (업데이트용)
+            if_exists="replace",  # 기존 테이블 덮어쓰기 (업데이트용)
             index=False,
             dtype={"geometry": "MultiPolygon"},
         )
