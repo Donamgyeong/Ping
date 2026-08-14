@@ -201,6 +201,7 @@ async def get_chat(
     limit: int = 50,
     before: str | None = None,
     revision: str | None = None,
+    redis: Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db),
 ) -> ResponseChat:
     user = await validate_token(token, db)
@@ -212,19 +213,14 @@ async def get_chat(
         )
     try:
         messages = await get_chat_history(
-            db=db, cid=target_cid, uid=user.uid, limit=limit, before_mid=before
+            db=db,
+            redis=redis,
+            cid=target_cid,
+            uid=user.uid,
+            limit=limit,
+            before_mid=before,
         )
-        chat_items = [
-            ChatItem(
-                mid=msg.message_id,
-                cid=msg.cid,
-                uid=msg.sender,
-                message=msg.content,
-                date=msg.message_date,
-            )
-            for msg in messages
-        ]
-        return ResponseChat(result="success", chat=chat_items)
+        return ResponseChat(result="success", chat=messages)
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -244,6 +240,7 @@ async def redis_reader(websocket: WebSocket, pubsub):
             if message:
                 await websocket.send_text(message["data"])
     except Exception as e:
+        await websocket.close()
         logging.warning(f"Redis reader error: {e}")
 
 
@@ -277,8 +274,11 @@ async def client_reader(
                     mid=mid, cid=cid, uid=user_uid, message=message, date=date
                 )
 
+                await redis.rpush(f"chat:{cid}:recent", chat_item.model_dump_json())
+                await redis.ltrim(f"chat:{cid}:recent", -100, -1)
+                await redis.expire(f"chat:{cid}:recent", 259200)
+
                 await redis.publish(f"chat:{cid}", chat_item.model_dump_json())
-                await redis.expire(f"chat:{cid}", 259200)
     except WebSocketDisconnect:
         logging.info(f"Client {user_uid} disconnected.")
     except Exception as e:
@@ -303,6 +303,7 @@ async def websocket_endpoint(
     redis: Redis = Depends(get_redis),
 ):
     await websocket.accept()
+    pubsub = None
     try:
         auth_msg = await asyncio.wait_for(websocket.receive_json(), timeout=5.0)
         if auth_msg.get("type") != "AUTH":
@@ -319,30 +320,30 @@ async def websocket_endpoint(
             )
 
         user = await validate_token(token.replace("Bearer ", ""), db)
+
+        cids = await get_chatrooms_by_user(db, user.uid)
+        pubsub = redis.pubsub()
+        if cids:
+            await pubsub.subscribe(*[f"chat:{cid}" for cid in cids])
+
+        redis_task = asyncio.create_task(redis_reader(websocket, pubsub))
+        client_task = asyncio.create_task(
+            client_reader(websocket, user.uid, redis, db, cids)
+        )
+        commit_task = asyncio.create_task(periodic_commit(db, 60))
+
+        done, pending = await asyncio.wait(
+            [redis_task, client_task, commit_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
     except (WebSocketException, HTTPException, ValueError, asyncio.TimeoutError) as e:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
+    finally:
+        for task in pending:
+            task.cancel()
 
-    cids = await get_chatrooms_by_user(db, user.uid)
-    pubsub = redis.pubsub()
-    if cids:
-        await pubsub.subscribe(*[f"chat:{cid}" for cid in cids])
+        await db.commit()
 
-    redis_task = asyncio.create_task(redis_reader(websocket, pubsub))
-    client_task = asyncio.create_task(
-        client_reader(websocket, user.uid, redis, db, cids)
-    )
-    commit_task = asyncio.create_task(periodic_commit(db, 60))
-
-    done, pending = await asyncio.wait(
-        [redis_task, client_task, commit_task],
-        return_when=asyncio.FIRST_COMPLETED,
-    )
-
-    for task in pending:
-        task.cancel()
-
-    await db.commit()
-
-    await pubsub.unsubscribe()
-    await pubsub.aclose()
+        if pubsub:
+            await pubsub.unsubscribe()
+            await pubsub.aclose()

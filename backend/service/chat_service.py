@@ -1,7 +1,9 @@
 from sqlalchemy import delete, update, select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
+from redis.asyncio import Redis
 from library.schema import *
+from library.model import *
 from uuid import uuid4
 
 
@@ -90,11 +92,12 @@ async def add_message(
 
 async def get_chat_history(
     db: AsyncSession,
+    redis: Redis,
     cid: str,
     uid: str,
     limit: int = 50,
     before_mid: str | None = None,
-) -> list[ChatMessage]:
+) -> list[ChatItem]:
     participant_stmt = select(ChatParticipant).where(
         ChatParticipant.cid == cid, ChatParticipant.uid == uid
     )
@@ -105,19 +108,40 @@ async def get_chat_history(
             detail="User is not a participant in this chat.",
         )
 
-    query = select(ChatMessage).where(ChatMessage.cid == cid)
+    messages_from_redis = await redis.lrange(f"chat:{cid}:recent", -100, -1)
+    messages = [ChatItem.model_validate_json(msg) for msg in messages_from_redis]
 
-    if before_mid:
-        subquery = (
-            select(ChatMessage.message_date)
-            .where(ChatMessage.message_id == before_mid)
-            .scalar_subquery()
-        )
-        query = query.where(ChatMessage.message_date < subquery)
+    query = select(ChatMessage).where(
+        ChatMessage.cid == cid,
+        ChatMessage.message_date < messages[0].date,
+    )
+
+    # if before_mid:
+    #     subquery = (
+    #         select(ChatMessage.message_date)
+    #         .where(ChatMessage.message_id == before_mid)
+    #         .scalar_subquery()
+    #     )
+    #     query = query.where(
+    #         ChatMessage.message_date < subquery,
+    #     )
 
     query = query.order_by(desc(ChatMessage.message_date)).limit(limit)
     result = await db.execute(query)
-    messages = list(result.scalars().all())
+    messages_from_db = list(result.scalars().all())
+    messages = messages.extend(
+        [
+            ChatItem(
+                mid=msg.message_id,
+                cid=msg.cid,
+                uid=msg.sender,
+                message=msg.content,
+                date=msg.message_date,
+            )
+            for msg in messages_from_db
+        ]
+    )
 
-    return messages[::-1]
-
+    if messages:
+        return messages
+    return []

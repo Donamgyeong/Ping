@@ -223,7 +223,7 @@ export default function RegionalFeedGridPage() {
 
   // Feed loading state
   const [rawLocations, setRawLocations] = useState<
-    { fid: string; uid: string; location: { lat: number; long: number }; post_date: string }[]
+    { fid: string; uid: string; location?: { lat: number; long: number }; post_date: string }[]
   >([]);
   const [feeds, setFeeds] = useState<FeedItem[]>([]);
   const [loadingFeeds, setLoadingFeeds] = useState(true);
