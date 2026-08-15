@@ -166,39 +166,47 @@ async def get_file(
                     cache_bucket, file_record.filename + "_thumbnail"
                 )
             else:
-                original_stream = await get_from_minio(
-                    image_bucket, file_record.filename
-                )
-
-                with SpooledTemporaryFile(
-                    max_size=10 * 1024 * 1024
-                ) as orig_file, SpooledTemporaryFile(
-                    max_size=10 * 1024 * 1024
-                ) as thumb_file:
-
-                    for chunk in original_stream.stream(32 * 1024):
-                        orig_file.write(chunk)
-                    orig_file.seek(0)
-
-                    image = Image.open(orig_file)
-                    image.thumbnail((256, 256))
-                    image.save(thumb_file, "PNG")
-
-                    thumb_file.seek(0, 2)
-                    file_size = thumb_file.tell()
-                    thumb_file.seek(0)
-
-                    await upload_to_minio(
-                        cache_bucket,
-                        file_record.filename + "_thumbnail",
-                        thumb_file,
-                        file_size,
-                        "image/png",
+                try:
+                    original_stream = await get_from_minio(
+                        image_bucket, file_record.filename
                     )
 
-                file_stream = await get_from_minio(
-                    cache_bucket, file_record.filename + "_thumbnail"
-                )
+                    with SpooledTemporaryFile(
+                        max_size=10 * 1024 * 1024
+                    ) as orig_file, SpooledTemporaryFile(
+                        max_size=10 * 1024 * 1024
+                    ) as thumb_file:
+
+                        for chunk in original_stream.stream(32 * 1024):
+                            orig_file.write(chunk)
+                        orig_file.seek(0)
+
+                        image = Image.open(orig_file)
+                        image.thumbnail((256, 256))
+                        image.save(thumb_file, "PNG")
+
+                        thumb_file.seek(0, 2)
+                        file_size = thumb_file.tell()
+                        thumb_file.seek(0)
+
+                        await upload_to_minio(
+                            cache_bucket,
+                            file_record.filename + "_thumbnail",
+                            thumb_file,
+                            file_size,
+                            "image/png",
+                        )
+
+                    file_stream = await get_from_minio(
+                        cache_bucket, file_record.filename + "_thumbnail"
+                    )
+                except Exception as e:
+                    logging.warning(
+                        f"Failed to generate thumbnail on the fly for {file_record.filename}: {e}"
+                    )
+                    file_stream = await get_from_minio(
+                        image_bucket, file_record.filename
+                    )
         else:
             file_stream = await get_from_minio(image_bucket, file_record.filename)
 

@@ -14,6 +14,7 @@ import {
   Camera,
   FileText,
 } from "lucide-react";
+import { convertHeicToJpeg } from "@/utils/heic";
 
 export default function EditProfilePage() {
   const { token, uid, loading: authLoading, authFetch } = useAuth();
@@ -111,13 +112,16 @@ export default function EditProfilePage() {
   const handlePictureChange = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const file = e.target.files?.[0];
+    let file = e.target.files?.[0];
     if (!file || !token) return;
 
     setPictureMessage(null);
     setUploadingPicture(true);
 
     try {
+      file = await convertHeicToJpeg(file);
+      setAvatarPreview(URL.createObjectURL(file));
+
       // 1. Upload File
       const formData = new FormData();
       formData.append("file", file);
@@ -366,7 +370,7 @@ export default function EditProfilePage() {
               <input
                 id="profile-picture-input"
                 type="file"
-                accept="image/*"
+                accept="image/*,.heic,.heif"
                 onChange={handlePictureChange}
                 className="hidden"
                 disabled={uploadingPicture}

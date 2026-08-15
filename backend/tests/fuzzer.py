@@ -4,7 +4,7 @@ import random
 
 URL = "http://localhost:8000"
 CNT = 50000
-IMAGE = "af7ec747-fbc6-417c-950a-21fd33c75337"
+IMAGE = "82dcd8d5-5876-4116-acd6-238ed16ee998"
 
 lat_rng = {"low": 33.00, "high": 43.00}
 lng_rng = {"low": 124.00, "high": 132.11}

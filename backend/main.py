@@ -15,9 +15,6 @@ from config import settings
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from library.minio import minio_init
-    from library.redis import get_redis
-
-    client = get_redis()
 
     await minio_init()
 
@@ -30,6 +27,7 @@ origins = [
     "https://localhost",
     "http://localhost",
     "http://localhost:8002",
+    "https://localhost:8002",
 ]
 
 app.add_middleware(

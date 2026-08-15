@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import dynamic from "next/dynamic";
-import EXIF from "exif-js";
+import exifr from "exifr";
+import { processImageFiles } from "@/utils/heic";
 import { PlusCircle, Upload, X, ArrowLeft, Lock, Globe } from "lucide-react";
 
 const LocationPicker = dynamic(
@@ -14,14 +15,6 @@ const LocationPicker = dynamic(
     loading: () => <p className="text-xs text-gray-500">Loading map...</p>,
   }
 );
-
-function convertDMSToDD(dms: number[], direction: string) {
-  let dd = dms[0] + dms[1] / 60 + dms[2] / 3600;
-  if (direction === "S" || direction === "W") {
-    dd = dd * -1;
-  }
-  return dd;
-}
 
 export default function NewFeedPage() {
   const { token, loading: authLoading } = useAuth();
@@ -40,6 +33,7 @@ export default function NewFeedPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isConverting, setIsConverting] = useState(false);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -69,44 +63,58 @@ export default function NewFeedPage() {
   }, [token, router, authLoading, location]);
 
   const handleFileChange = useCallback(
-    (selectedFiles: FileList | null) => {
-      if (selectedFiles) {
-        const newFiles = Array.from(selectedFiles);
-        setFiles((prevFiles) => [...prevFiles, ...newFiles]);
+    async (selectedFiles: FileList | null) => {
+      if (selectedFiles && selectedFiles.length > 0) {
+        setIsConverting(true);
+        setError(null);
+        try {
+          const rawFiles = Array.from(selectedFiles);
 
-        let locationSetFromExif = false;
-
-        newFiles.forEach((file) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            setImagePreviews((prevPreviews) => [
-              ...prevPreviews,
-              reader.result as string,
-            ]);
-
-            if (file.type.startsWith("image/") && !locationSetFromExif) {
-              EXIF.getData(file as any, function (this: any) {
-                const lat = EXIF.getTag(this, "GPSLatitude");
-                const latRef = EXIF.getTag(this, "GPSLatitudeRef");
-                const long = EXIF.getTag(this, "GPSLongitude");
-                const longRef = EXIF.getTag(this, "GPSLongitudeRef");
-
-                if (lat && latRef && long && longRef) {
-                  const decimalLat = convertDMSToDD(lat, latRef);
-                  const decimalLong = convertDMSToDD(long, longRef);
-
-                  setLocation({ lat: decimalLat, long: decimalLong });
-                  setInitialMapCenter({ lat: decimalLat, lng: decimalLong });
-                  locationSetFromExif = true;
-                }
-              });
+          // 1. Extract GPS location from raw files (works for HEIC, JPEG, PNG, etc.)
+          for (const rawFile of rawFiles) {
+            try {
+              const gps = await exifr.gps(rawFile);
+              if (
+                gps &&
+                typeof gps.latitude === "number" &&
+                typeof gps.longitude === "number"
+              ) {
+                setLocation({ lat: gps.latitude, long: gps.longitude });
+                setInitialMapCenter({ lat: gps.latitude, lng: gps.longitude });
+                break;
+              }
+            } catch (e) {
+              console.warn(
+                "Could not extract EXIF location from raw file:",
+                rawFile.name,
+                e
+              );
             }
-          };
-          reader.readAsDataURL(file);
-        });
+          }
+
+          // 2. Convert HEIC files to JPEG for browser preview and backend upload
+          const newFiles = await processImageFiles(rawFiles);
+
+          if (newFiles.length === 0 && rawFiles.length > 0) {
+            setError(
+              "Failed to process selected image(s). Please try a different photo format."
+            );
+            return;
+          }
+
+          const newPreviews = newFiles.map((file) => URL.createObjectURL(file));
+
+          setFiles((prevFiles) => [...prevFiles, ...newFiles]);
+          setImagePreviews((prevPreviews) => [...prevPreviews, ...newPreviews]);
+        } catch (err) {
+          console.error("Error processing selected files:", err);
+          setError("Failed to convert image for preview.");
+        } finally {
+          setIsConverting(false);
+        }
       }
     },
-    [location]
+    []
   );
 
   const removeImage = (index: number) => {
@@ -293,17 +301,25 @@ export default function NewFeedPage() {
                     type="file"
                     className="sr-only"
                     multiple
-                    accept="image/*"
+                    accept="image/*,.heic,.heif"
                     onChange={(e) => handleFileChange(e.target.files)}
                   />
                 </label>
                 <span className="pl-1">or drag and drop</span>
               </div>
               <p className="text-[10px] text-gray-500 mt-1">
-                PNG, JPG, GIF up to 10MB
+                PNG, JPG, GIF, HEIC up to 10MB
               </p>
             </div>
           </div>
+
+          {/* Converting Indicator */}
+          {isConverting && (
+            <div className="flex items-center justify-center p-3 text-xs text-blue-400 gap-2 bg-blue-950/40 border border-blue-900/60 rounded-xl">
+              <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              <span>Converting HEIC image for preview...</span>
+            </div>
+          )}
 
           {/* Image Previews */}
           {imagePreviews.length > 0 && (

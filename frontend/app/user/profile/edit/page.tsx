@@ -14,6 +14,7 @@ import {
   Camera,
   FileText,
 } from "lucide-react";
+import { convertHeicToJpeg } from "@/utils/heic";
 
 export default function EditProfilePage() {
   const { token, uid, loading: authLoading, authFetch } = useAuth();
@@ -110,13 +111,16 @@ export default function EditProfilePage() {
   const handlePictureChange = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const file = e.target.files?.[0];
+    let file = e.target.files?.[0];
     if (!file || !token) return;
 
     setPictureMessage(null);
     setUploadingPicture(true);
 
     try {
+      file = await convertHeicToJpeg(file);
+      setAvatarPreview(URL.createObjectURL(file));
+
       const formData = new FormData();
       formData.append("file", file);
       formData.append("private", "false");
@@ -363,7 +367,7 @@ export default function EditProfilePage() {
               <input
                 id="profile-picture-input-alt"
                 type="file"
-                accept="image/*"
+                accept="image/*,.heic,.heif"
                 onChange={handlePictureChange}
                 className="hidden"
                 disabled={uploadingPicture}
@@ -372,7 +376,7 @@ export default function EditProfilePage() {
 
             <div className="flex-1 text-center sm:text-left space-y-2">
               <p className="text-xs text-gray-300">
-                Upload a new avatar. Recommended size is 250x250px (JPG, PNG, GIF).
+                Upload a new avatar. Recommended size is 250x250px (JPG, PNG, GIF, HEIC).
               </p>
               <label
                 htmlFor="profile-picture-input-alt"
