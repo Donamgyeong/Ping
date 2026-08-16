@@ -107,7 +107,7 @@ class ResponseIDS(ResponseBase):
 
 
 class ChatItem(BaseModel):
-    mid: str
+    idx: int
     cid: str
     uid: str
     message: str

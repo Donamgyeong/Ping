@@ -16,9 +16,13 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] w-full overflow-hidden bg-black">
-      <ChatSidebar />
-      <ChatRoomView />
+    <div className="flex h-[calc(100vh-4rem)] h-[calc(100dvh-4rem)] w-full overflow-hidden bg-black">
+      <div className="w-full md:w-80 h-full shrink-0 flex flex-col">
+        <ChatSidebar />
+      </div>
+      <div className="hidden md:flex flex-1 h-full min-w-0">
+        <ChatRoomView />
+      </div>
     </div>
   );
 }

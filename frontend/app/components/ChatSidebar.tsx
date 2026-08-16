@@ -81,7 +81,7 @@ export default function ChatSidebar({ activeCid, onSelectRoom }: ChatSidebarProp
       </div>
 
       {/* Room List */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+      <div className="flex-1 overflow-y-auto p-2 space-y-1 pb-20 md:pb-2">
         {loading ? (
           <div className="p-4 text-center text-sm text-gray-500">
             Loading chats...

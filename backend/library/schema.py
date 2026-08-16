@@ -1,6 +1,6 @@
 from typing import List, Optional
 from sqlalchemy.orm import Mapped, mapped_column, DeclarativeBase, relationship
-from sqlalchemy import ForeignKey, String, Date, DateTime, Boolean, Text, Index
+from sqlalchemy import ForeignKey, String, Integer, Date, DateTime, Boolean, Text, Index
 from geoalchemy2 import Geometry, WKBElement
 from geoalchemy2.shape import from_shape, to_shape
 from datetime import date, datetime
@@ -156,10 +156,13 @@ class ChatParticipant(Base):
 
 class ChatMessage(Base):
     __tablename__ = "chat_message"
-    message_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     cid: Mapped[str] = mapped_column(
-        String(36), ForeignKey("chat.cid", ondelete="CASCADE"), nullable=False
+        String(36),
+        ForeignKey("chat.cid", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
     )
+    message_idx: Mapped[int] = mapped_column(Integer, nullable=False, primary_key=True)
     sender: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.uid", ondelete="CASCADE"), nullable=False
     )

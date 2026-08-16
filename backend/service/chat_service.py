@@ -78,16 +78,21 @@ async def get_chatroom_info(db: AsyncSession, cids: list[str]) -> list[Chat]:
 
 
 async def add_message(
-    db: AsyncSession, cid: str, uid: str, content: str, message_date: datetime
-) -> str:
-    mid = str(uuid4())
+    db: AsyncSession,
+    redis: Redis,
+    cid: str,
+    uid: str,
+    content: str,
+    message_date: datetime,
+) -> int:
+    idx = await redis.incr("chat:" + cid, 1)
     new_message = ChatMessage(
-        message_id=mid, cid=cid, sender=uid, content=content, message_date=message_date
+        cid=cid, message_idx=idx, sender=uid, content=content, message_date=message_date
     )
 
     db.add(new_message)
 
-    return mid
+    return idx
 
 
 async def get_chat_history(
@@ -95,8 +100,7 @@ async def get_chat_history(
     redis: Redis,
     cid: str,
     uid: str,
-    limit: int = 50,
-    before_mid: str | None = None,
+    last_idx: int,
 ) -> list[ChatItem]:
     participant_stmt = select(ChatParticipant).where(
         ChatParticipant.cid == cid, ChatParticipant.uid == uid
@@ -108,39 +112,57 @@ async def get_chat_history(
             detail="User is not a participant in this chat.",
         )
 
-    messages_from_redis = await redis.lrange(f"chat:{cid}:recent", -100, -1)
-    messages = [ChatItem.model_validate_json(msg) for msg in messages_from_redis]
+    count = await redis.get("chat:" + cid)
+    if not count or int(count) == last_idx:
+        return []
+    elif int(count) < last_idx:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="INTERNAL SERVER ERROR",
+        )
 
-    query = select(ChatMessage).where(
-        ChatMessage.cid == cid,
-        ChatMessage.message_date < messages[0].date,
+    data_from_redis = await redis.lrange(f"chat:{cid}:recent", -50, -1)
+    messages_from_redis = [ChatItem.model_validate_json(msg) for msg in data_from_redis]
+
+    query_idx = 0
+    if len(messages_from_redis) != 0 and messages_from_redis[0].idx == last_idx:
+        return messages_from_redis
+    elif len(messages_from_redis) != 0:
+        query_idx = messages_from_redis[0].idx
+
+    stmt = (
+        select(ChatMessage)
+        .where(
+            ChatMessage.message_idx > last_idx,
+            ChatMessage.message_idx < query_idx,
+            ChatMessage.cid == cid,
+        )
+        .order_by(ChatMessage.message_idx)
     )
 
-    # if before_mid:
-    #     subquery = (
-    #         select(ChatMessage.message_date)
-    #         .where(ChatMessage.message_id == before_mid)
-    #         .scalar_subquery()
-    #     )
-    #     query = query.where(
-    #         ChatMessage.message_date < subquery,
-    #     )
-
-    query = query.order_by(desc(ChatMessage.message_date)).limit(limit)
-    result = await db.execute(query)
-    messages_from_db = list(result.scalars().all())
-    messages = messages.extend(
-        [
-            ChatItem(
-                mid=msg.message_id,
-                cid=msg.cid,
-                uid=msg.sender,
-                message=msg.content,
-                date=msg.message_date,
+    if query_idx == 0:
+        stmt = (
+            select(ChatMessage)
+            .where(
+                ChatMessage.message_idx > last_idx,
+                ChatMessage.cid == cid,
             )
-            for msg in messages_from_db
-        ]
-    )
+            .order_by(ChatMessage.message_idx)
+        )
+
+    result = await db.execute(stmt)
+    data_from_db = list(result.scalars().all())
+    messages = [
+        ChatItem(
+            idx=msg.message_idx,
+            cid=msg.cid,
+            uid=msg.sender,
+            message=msg.content,
+            date=msg.message_date,
+        )
+        for msg in data_from_db
+    ]
+    messages.extend(messages_from_redis)
 
     if messages:
         return messages

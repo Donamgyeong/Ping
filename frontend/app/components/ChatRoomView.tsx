@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
-import { User, Loader2, MessageSquare, Send } from "lucide-react";
+import { User, Loader2, MessageSquare, Send, ArrowLeft } from "lucide-react";
 
 interface Message {
-  mid: string;
+  idx?: number;
+  mid?: string;
   cid: string;
   uid: string;
   message: string;
@@ -24,7 +26,6 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
   const { token, uid, loading, authFetch } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
-  const [hasMore, setHasMore] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [isInitialLoaded, setIsInitialLoaded] = useState(false);
 
@@ -35,29 +36,25 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
   // 1. Reset state when cid changes
   useEffect(() => {
     setMessages([]);
-    setHasMore(true);
     setIsInitialLoaded(false);
   }, [cid]);
 
-  // 2. Initial Chat History Loading
+  // 2. Initial Chat History Loading with last_idx=0
   useEffect(() => {
     if (!loading && cid && token) {
       let isMounted = true;
       setLoadingHistory(true);
 
-      authFetch(`${API_URL}/chat/messages/${cid}?limit=50`)
+      authFetch(`${API_URL}/chat/messages/${cid}?last_idx=0`)
         .then((res) => res.json())
         .then((data) => {
           if (!isMounted) return;
           if (data.result === "success" && Array.isArray(data.chat)) {
             setMessages(data.chat);
-            if (data.chat.length < 50) {
-              setHasMore(false);
-            }
           }
         })
         .catch((err) => {
-          console.error("Failed to load initial chat history:", err);
+          console.error("Failed to load chat history:", err);
         })
         .finally(() => {
           if (isMounted) {
@@ -72,53 +69,7 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
     }
   }, [cid, token, loading, authFetch]);
 
-  // 3. Load Older Messages (Pagination)
-  const loadMoreMessages = useCallback(async () => {
-    if (loadingHistory || !hasMore || messages.length === 0 || !cid) return;
-
-    const oldestMessageId = messages[0].mid;
-    setLoadingHistory(true);
-
-    const container = scrollContainerRef.current;
-    const oldScrollHeight = container ? container.scrollHeight : 0;
-
-    try {
-      const response = await authFetch(
-        `${API_URL}/chat/messages/${cid}?limit=50&before=${oldestMessageId}`
-      );
-      const data = await response.json();
-
-      if (data.result === "success" && Array.isArray(data.chat)) {
-        if (data.chat.length < 50) {
-          setHasMore(false);
-        }
-        if (data.chat.length > 0) {
-          setMessages((prev) => [...data.chat, ...prev]);
-
-          requestAnimationFrame(() => {
-            if (container) {
-              const newScrollHeight = container.scrollHeight;
-              container.scrollTop = newScrollHeight - oldScrollHeight;
-            }
-          });
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load older messages:", err);
-    } finally {
-      setLoadingHistory(false);
-    }
-  }, [loadingHistory, hasMore, messages, cid, authFetch]);
-
-  // 4. Scroll Event Listener for Infinity Scroll
-  const handleScroll = () => {
-    const container = scrollContainerRef.current;
-    if (container && container.scrollTop === 0 && hasMore && !loadingHistory) {
-      loadMoreMessages();
-    }
-  };
-
-  // 5. WebSocket Connection
+  // 3. WebSocket Connection
   useEffect(() => {
     if (!loading && cid && token) {
       const socket = new WebSocket(`${WEBSOCKET_URL}/chat/ws`);
@@ -134,7 +85,7 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
           })
         );
 
-        // 30초 백엔드 타임아웃 방지를 위해 25초(또는 30초)마다 heartbeat ping 전송
+        // 30초 백엔드 타임아웃 방지를 위해 25초마다 heartbeat ping 전송
         pingInterval = setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: "ping" }));
@@ -149,8 +100,16 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
           if (messageData.type === "pong") {
             return;
           }
-          if (messageData.mid) {
-            setMessages((prevMessages) => [...prevMessages, messageData]);
+          if (messageData.message && (!messageData.cid || messageData.cid === cid)) {
+            setMessages((prevMessages) => {
+              if (
+                messageData.idx !== undefined &&
+                prevMessages.some((m) => m.idx === messageData.idx)
+              ) {
+                return prevMessages;
+              }
+              return [...prevMessages, messageData];
+            });
           }
         } catch (e) {
           console.error("Failed to parse WebSocket message:", e);
@@ -252,24 +211,32 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-gray-950">
+    <div className="flex-1 flex flex-col h-full bg-gray-950 min-w-0">
       {/* Header */}
-      <div className="bg-gray-900 p-4 border-b border-gray-800 flex items-center justify-between shadow-xs">
-        <div>
-          <h1 className="text-lg font-bold text-white flex items-center gap-2">
-            <span>Chat Room</span>
-            <span className="text-xs bg-gray-800 text-gray-300 font-mono px-2 py-0.5 rounded-md border border-gray-700">
+      <div className="bg-gray-900 px-4 py-3 md:py-3.5 border-b border-gray-800 flex items-center justify-between shrink-0 shadow-xs">
+        <div className="flex items-center gap-3 min-w-0">
+          <Link
+            href="/chat"
+            className="md:hidden p-1.5 -ml-1 text-gray-400 hover:text-white bg-gray-950/80 border border-gray-800 rounded-lg transition-all flex items-center justify-center shrink-0"
+            title="Back to chats"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-base md:text-lg font-bold text-white shrink-0">
+              Chat Room
+            </h1>
+            <span className="text-xs bg-gray-800 text-gray-300 font-mono px-2 py-0.5 rounded-md border border-gray-700 max-w-[130px] sm:max-w-[220px] truncate">
               {cid}
             </span>
-          </h1>
+          </div>
         </div>
       </div>
 
       {/* Messages Scroll Area */}
       <div
         ref={scrollContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 space-y-4"
+        className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-4"
       >
         {loadingHistory && (
           <div className="flex justify-center items-center py-2">
@@ -286,7 +253,7 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
             const isNewDay = currentDateKey !== prevDateKey;
 
             return (
-              <React.Fragment key={msg.mid}>
+              <React.Fragment key={msg.idx ?? msg.mid ?? `${msg.cid}-${msg.date}-${index}`}>
                 {isNewDay && (
                   <div className="flex items-center justify-center my-4">
                     <div className="bg-gray-800 text-gray-300 border border-gray-700 text-xs px-3.5 py-1 rounded-full shadow-sm font-medium">
@@ -313,13 +280,13 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
                     </div>
                   )}
                   <div
-                    className={`max-w-[75%] px-4 py-2.5 rounded-2xl shadow-sm ${
+                    className={`max-w-[85%] sm:max-w-[75%] px-3.5 py-2.5 sm:px-4 rounded-2xl shadow-sm ${
                       msg.uid === uid
                         ? "bg-blue-600 text-white rounded-br-none"
                         : "bg-gray-800 text-gray-100 border border-gray-700 rounded-bl-none"
                     }`}
                   >
-                    <p className="text-sm leading-relaxed">{msg.message}</p>
+                    <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{msg.message}</p>
                     <p
                       className={`text-[10px] text-right mt-1 opacity-75 ${
                         msg.uid === uid ? "text-blue-100" : "text-gray-400"
@@ -337,22 +304,22 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
       </div>
 
       {/* Input Form */}
-      <div className="p-4 bg-gray-900 border-t border-gray-800">
-        <form onSubmit={handleSendMessage} className="flex gap-3">
+      <div className="p-3 sm:p-4 bg-gray-900 border-t border-gray-800 shrink-0">
+        <form onSubmit={handleSendMessage} className="flex items-center gap-2 sm:gap-3">
           <input
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            className="flex-1 bg-gray-950 border border-gray-800 text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors"
+            className="flex-1 bg-gray-950 border border-gray-800 text-white text-sm rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3 focus:outline-none focus:border-blue-500 transition-colors"
             placeholder="Type a message..."
           />
           <button
             type="submit"
             disabled={!newMessage.trim()}
-            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-3 rounded-xl flex items-center gap-1.5 transition-colors font-medium text-sm cursor-pointer shadow-md"
+            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3.5 py-2.5 sm:px-5 sm:py-3 rounded-xl flex items-center gap-1.5 transition-colors font-medium text-sm cursor-pointer shadow-md shrink-0"
           >
             <Send className="w-4 h-4" />
-            <span>Send</span>
+            <span className="hidden sm:inline">Send</span>
           </button>
         </form>
       </div>

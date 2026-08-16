@@ -99,11 +99,12 @@ CREATE TABLE chat_participant (
 );
 
 CREATE TABLE chat_message (
-    message_id CHAR(36) PRIMARY KEY,
     cid CHAR(36) NOT NULL REFERENCES chat (cid) ON DELETE CASCADE,
+    message_idx BIGINT NOT NULL,
     sender CHAR(36) NOT NULL REFERENCES users (uid) ON DELETE CASCADE,
     content TEXT NOT NULL,
-    message_date TIMESTAMP NOT NULL
+    message_date TIMESTAMP NOT NULL,
+    PRIMARY KEY (cid, message_idx)
 );
 
 CREATE TABLE notification (

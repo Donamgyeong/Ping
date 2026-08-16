@@ -19,9 +19,13 @@ export default function ChatRoomPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] w-full overflow-hidden bg-black">
-      <ChatSidebar activeCid={cid} />
-      <ChatRoomView cid={cid} />
+    <div className="flex h-[calc(100vh-4rem)] h-[calc(100dvh-4rem)] w-full overflow-hidden bg-black">
+      <div className="hidden md:flex md:w-80 h-full shrink-0 flex-col">
+        <ChatSidebar activeCid={cid} />
+      </div>
+      <div className="w-full flex-1 h-full flex flex-col min-w-0">
+        <ChatRoomView cid={cid} />
+      </div>
     </div>
   );
 }

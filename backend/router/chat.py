@@ -194,37 +194,27 @@ async def invite_to_chat(
 
 
 @router.get("/messages/{cid}")
-@router.get("/get/")
 async def get_chat(
     token: Annotated[str, Depends(oauth2_scheme)],
-    cid: str | None = None,
-    limit: int = 50,
-    before: str | None = None,
-    revision: str | None = None,
+    cid: str,
+    last_idx: int,
     redis: Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db),
 ) -> ResponseChat:
     user = await validate_token(token, db)
-    target_cid = cid or revision
-    if not target_cid:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Chat ID is required.",
-        )
     try:
         messages = await get_chat_history(
             db=db,
             redis=redis,
-            cid=target_cid,
+            cid=cid,
             uid=user.uid,
-            limit=limit,
-            before_mid=before,
+            last_idx=last_idx,
         )
         return ResponseChat(result="success", chat=messages)
     except HTTPException as e:
         raise e
     except Exception as e:
-        logging.error(f"Error getting chat history for cid {target_cid}: {e}")
+        logging.error(f"Error getting chat history for cid {cid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -268,15 +258,14 @@ async def client_reader(
                     )
                     continue
 
-                mid = await add_message(db, cid, user_uid, message, date)
+                idx = await add_message(db, redis, cid, user_uid, message, date)
 
                 chat_item = ChatItem(
-                    mid=mid, cid=cid, uid=user_uid, message=message, date=date
+                    idx=idx, cid=cid, uid=user_uid, message=message, date=date
                 )
 
                 await redis.rpush(f"chat:{cid}:recent", chat_item.model_dump_json())
-                await redis.ltrim(f"chat:{cid}:recent", -100, -1)
-                await redis.expire(f"chat:{cid}:recent", 259200)
+                await redis.ltrim(f"chat:{cid}:recent", -50, -1)
 
                 await redis.publish(f"chat:{cid}", chat_item.model_dump_json())
     except WebSocketDisconnect:

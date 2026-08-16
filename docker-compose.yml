@@ -150,6 +150,7 @@ services:
     restart: always
     environment:
       NEXT_PUBLIC_API_URL: ${URL}
+      EXTERNAL_HOST: ${EXTERNAL_HOST}
     ports:
       - "3000:3000"
     depends_on:

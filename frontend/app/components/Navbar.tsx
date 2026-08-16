@@ -39,6 +39,8 @@ export default function Navbar() {
     return () => clearInterval(interval);
   }, [isLoggedIn, pathname, authFetch]);
 
+  const isInsideChat = pathname.startsWith('/chat/') && pathname !== '/chat';
+
   return (
     <>
       <nav className="sticky top-0 z-40 bg-gray-950/80 backdrop-blur-md border-b border-gray-800/80">
@@ -157,83 +159,85 @@ export default function Navbar() {
       </nav>
 
       {/* Mobile Bottom Navigation Bar */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-[9999] bg-gray-950/95 border-t border-gray-800/80 backdrop-blur-lg px-4 py-2 flex items-center justify-around shadow-2xl">
-        <Link
-          href="/"
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
-            pathname === '/'
-              ? 'text-blue-400 font-semibold'
-              : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          <Radio className="w-5 h-5" />
-          <span className="text-[10px]">Home</span>
-        </Link>
-        <Link
-          href="/feed"
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
-            pathname === '/feed'
-              ? 'text-blue-400 font-semibold'
-              : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          <Rss className="w-5 h-5" />
-          <span className="text-[10px]">Feed</span>
-        </Link>
-        <Link
-          href="/region"
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
-            pathname.startsWith('/region') || pathname.startsWith('/feed/region')
-              ? 'text-blue-400 font-semibold'
-              : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          <Grid className="w-5 h-5" />
-          <span className="text-[10px]">Region</span>
-        </Link>
-        <Link
-          href="/chat"
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
-            pathname.startsWith('/chat')
-              ? 'text-blue-400 font-semibold'
-              : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          <MessageSquare className="w-5 h-5" />
-          <span className="text-[10px]">Chat</span>
-        </Link>
-        {isLoggedIn && (
+      {!isInsideChat && (
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-[9999] bg-gray-950/95 border-t border-gray-800/80 backdrop-blur-lg px-4 py-2 flex items-center justify-around shadow-2xl">
           <Link
-            href="/notification"
-            className={`relative flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
-              pathname.startsWith('/notification')
+            href="/"
+            className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+              pathname === '/'
                 ? 'text-blue-400 font-semibold'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
-            <div className="relative">
-              <Bell className="w-5 h-5" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-2 flex items-center justify-center text-[9px] font-bold text-white bg-red-500 rounded-full h-3.5 min-w-[14px] px-1 ring-1 ring-gray-950 animate-pulse">
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </span>
-              )}
-            </div>
-            <span className="text-[10px]">Alerts</span>
+            <Radio className="w-5 h-5" />
+            <span className="text-[10px]">Home</span>
           </Link>
-        )}
-        <Link
-          href={isLoggedIn ? `/user/profile/${uid}` : '/user/login'}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
-            pathname.startsWith('/user')
-              ? 'text-blue-400 font-semibold'
-              : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          <User className="w-5 h-5" />
-          <span className="text-[10px]">{isLoggedIn ? 'Profile' : 'Login'}</span>
-        </Link>
-      </div>
+          <Link
+            href="/feed"
+            className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+              pathname === '/feed'
+                ? 'text-blue-400 font-semibold'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <Rss className="w-5 h-5" />
+            <span className="text-[10px]">Feed</span>
+          </Link>
+          <Link
+            href="/region"
+            className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+              pathname.startsWith('/region') || pathname.startsWith('/feed/region')
+                ? 'text-blue-400 font-semibold'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <Grid className="w-5 h-5" />
+            <span className="text-[10px]">Region</span>
+          </Link>
+          <Link
+            href="/chat"
+            className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+              pathname.startsWith('/chat')
+                ? 'text-blue-400 font-semibold'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <MessageSquare className="w-5 h-5" />
+            <span className="text-[10px]">Chat</span>
+          </Link>
+          {isLoggedIn && (
+            <Link
+              href="/notification"
+              className={`relative flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+                pathname.startsWith('/notification')
+                  ? 'text-blue-400 font-semibold'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <div className="relative">
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-2 flex items-center justify-center text-[9px] font-bold text-white bg-red-500 rounded-full h-3.5 min-w-[14px] px-1 ring-1 ring-gray-950 animate-pulse">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px]">Alerts</span>
+            </Link>
+          )}
+          <Link
+            href={isLoggedIn ? `/user/profile/${uid}` : '/user/login'}
+            className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+              pathname.startsWith('/user')
+                ? 'text-blue-400 font-semibold'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <User className="w-5 h-5" />
+            <span className="text-[10px]">{isLoggedIn ? 'Profile' : 'Login'}</span>
+          </Link>
+        </div>
+      )}
     </>
   );
 }
