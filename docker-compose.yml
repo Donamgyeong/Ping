@@ -7,6 +7,7 @@ services:
       - "80:80"
       - "8002:8002"
       - "443:443"
+      - "9000:9000"
     volumes:
       - ./proxy/nginx.conf:/etc/nginx/nginx.conf
       - ./proxy/private-key.pem:/etc/nginx/ssl/private-key.pem
@@ -70,7 +71,6 @@ services:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
     ports:
-      - "9000:9000"
       - "9001:9001"
     volumes:
       - minio_data:/data
@@ -101,8 +101,6 @@ services:
       EXTERNAL_HOST: ${EXTERNAL_HOST}
       SECRET_KEY: ${SECRET_KEY}
       EXPIRE_TIME: ${EXPIRE_TIME}
-    ports:
-      - "8000:8000"
     depends_on:
       - db
       - redis
@@ -134,8 +132,6 @@ services:
       EXTERNAL_HOST: ${EXTERNAL_HOST}
       SECRET_KEY: ${SECRET_KEY}
       EXPIRE_TIME: ${EXPIRE_TIME}
-    ports:
-      - "8001:8000"
     depends_on:
       - db
       - redis
@@ -151,8 +147,6 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${URL}
       EXTERNAL_HOST: ${EXTERNAL_HOST}
-    ports:
-      - "3000:3000"
     depends_on:
       - backend_0
       - backend_1

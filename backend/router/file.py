@@ -3,16 +3,22 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, s
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import StreamingResponse
 from rich import json
-from library.model import ResponseBase, ResponseID
+from library.model import ResponseBase, ResponseID, ResponseFileURL
 from sqlalchemy.ext.asyncio import AsyncSession
 from library.db import get_db
 from service.auth_service import validate_token
-from service.file_service import new_file, get_file_by_fid, delete_file_record
+from service.file_service import (
+    new_file,
+    get_file_by_fid,
+    delete_file_record,
+    new_pending_upload,
+)
 from library.minio import (
     upload_to_minio,
     delete_from_minio,
     get_from_minio,
     find_from_minio,
+    get_upload_url_from_minio,
 )
 import logging
 from datetime import datetime
@@ -21,6 +27,8 @@ from io import BytesIO
 from tempfile import SpooledTemporaryFile
 from urllib.parse import quote
 from config import settings
+from redis.asyncio import Redis
+from library.redis import get_redis
 
 router = APIRouter(prefix="/file", tags=["files"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
@@ -29,65 +37,38 @@ image_bucket = settings.s3_bucket
 cache_bucket = settings.s3_cache_bucket
 
 
-@router.post("/upload")
-async def upload_file(
+@router.get("/upload/url")
+async def get_upload_url(
     token: Annotated[str, Depends(oauth2_scheme)],
-    file: UploadFile = File(...),
     private: bool = Form(...),
+    redis: Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db),
-) -> ResponseID:
+) -> ResponseFileURL:
     user = await validate_token(token, db)
-    if not file.size or not file.filename or not file.content_type:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File is missing",
-        )
-
-    if not file.content_type.startswith("image"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File is not an image",
-        )
     try:
-        fid, internal_name = await new_file(
-            db, user.uid, file.filename, private, datetime.now()
+        fid = await new_pending_upload(user.uid, private, redis)
+        url, expiry = await get_upload_url_from_minio(image_bucket, fid)
+
+        return ResponseFileURL(result="OK", url=url, valid_until=expiry)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
         )
 
-        await file.seek(0)
-        file_size = file.size
-        await upload_to_minio(
-            image_bucket, internal_name, file.file, file_size, file.content_type
-        )
 
-        try:
-            await file.seek(0)
-            with SpooledTemporaryFile(max_size=10 * 1024 * 1024) as thumb_file:
-                image = Image.open(file.file)
-                image.thumbnail((256, 256))
-                image.save(thumb_file, "PNG")
-                thumb_file.seek(0, 2)
-                thumb_size = thumb_file.tell()
-                thumb_file.seek(0)
-
-                await upload_to_minio(
-                    cache_bucket,
-                    internal_name + "_thumbnail",
-                    thumb_file,
-                    thumb_size,
-                    "image/png",
-                )
-        except Exception as e:
-            logging.warning(f"Failed to generate thumbnail for {internal_name}: {e}")
-
-        await db.commit()
-
-        return ResponseID(result="success", id=fid)
-    except HTTPException as e:
-        await db.rollback()
-        raise e
+@router.get("/upload/{fid}/complete")
+async def complete_pending_upload(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    redis: Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await validate_token(token, db)
+    try:
+        await new_file(db, redis, user.uid, datetime.now())
+        pass
     except Exception as e:
         await db.rollback()
-        logging.error(f"Error uploading file for user {user.uid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
@@ -115,11 +96,9 @@ async def delete_file(
                 detail="Not authorized to delete this file",
             )
 
-        await delete_from_minio(image_bucket, file_to_delete.filename)
-        if await find_from_minio(cache_bucket, file_to_delete.filename + "_thumbnail"):
-            await delete_from_minio(
-                cache_bucket, file_to_delete.filename + "_thumbnail"
-            )
+        await delete_from_minio(image_bucket, file_to_delete.fid)
+        if await find_from_minio(cache_bucket, file_to_delete.fid + "_thumbnail"):
+            await delete_from_minio(cache_bucket, file_to_delete.fid + "_thumbnail")
 
         await delete_file_record(db, fid)
 
@@ -161,14 +140,14 @@ async def get_file(
 
         file_stream = None
         if thumbnail:
-            if await find_from_minio(cache_bucket, file_record.filename + "_thumbnail"):
+            if await find_from_minio(cache_bucket, file_record.fid + "_thumbnail"):
                 file_stream = await get_from_minio(
-                    cache_bucket, file_record.filename + "_thumbnail"
+                    cache_bucket, file_record.fid + "_thumbnail"
                 )
             else:
                 try:
                     original_stream = await get_from_minio(
-                        image_bucket, file_record.filename
+                        image_bucket, file_record.fid
                     )
 
                     with SpooledTemporaryFile(
@@ -191,26 +170,24 @@ async def get_file(
 
                         await upload_to_minio(
                             cache_bucket,
-                            file_record.filename + "_thumbnail",
+                            file_record.fid + "_thumbnail",
                             thumb_file,
                             file_size,
                             "image/png",
                         )
 
                     file_stream = await get_from_minio(
-                        cache_bucket, file_record.filename + "_thumbnail"
+                        cache_bucket, file_record.fid + "_thumbnail"
                     )
                 except Exception as e:
                     logging.warning(
-                        f"Failed to generate thumbnail on the fly for {file_record.filename}: {e}"
+                        f"Failed to generate thumbnail on the fly for {file_record.fid}: {e}"
                     )
-                    file_stream = await get_from_minio(
-                        image_bucket, file_record.filename
-                    )
+                    file_stream = await get_from_minio(image_bucket, file_record.fid)
         else:
-            file_stream = await get_from_minio(image_bucket, file_record.filename)
+            file_stream = await get_from_minio(image_bucket, file_record.fid)
 
-        encoded_filename = quote(file_record.original_filename)
+        encoded_filename = quote(file_record.fid)
         return StreamingResponse(
             file_stream.stream(32 * 1024),
             media_type=file_stream.headers.get(

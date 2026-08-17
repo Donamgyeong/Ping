@@ -1,4 +1,5 @@
 from minio import Minio, S3Error
+from minio.datatypes import Object
 from config import settings
 from typing import BinaryIO
 from datetime import timedelta, datetime
@@ -58,19 +59,33 @@ async def get_from_minio(bucket: str, object_name: str):
     return await asyncio.to_thread(_get)
 
 
-async def get_url_from_minio(bucket: str, object_name: str) -> tuple[str, datetime]:
+async def get_upload_url_from_minio(
+    bucket: str, object_name: str
+) -> tuple[str, datetime]:
     def _get():
         return (
-            client.get_presigned_url(
-                method="GET",
+            client.presigned_put_object(
                 bucket_name=bucket,
                 object_name=object_name,
-                expires=timedelta(minutes=5),
+                expires=timedelta(seconds=settings.file_url_expire_time),
             ),
-            datetime.now() + timedelta(minutes=5),
+            datetime.now() + timedelta(seconds=settings.file_url_expire_time),
         )
 
     return await asyncio.to_thread(_get)
+
+
+async def get_file_info(bucket: str, object_name: str) -> tuple[str, int] | None:
+    def _info():
+        try:
+            object = client.stat_object(bucket, object_name)
+            if not object.content_type or not object.size:
+                return None
+            return object.content_type, object.size
+        except S3Error:
+            return None
+
+    return await asyncio.to_thread(_info)
 
 
 async def find_from_minio(bucket: str, object_name: str) -> bool:

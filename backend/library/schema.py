@@ -29,8 +29,7 @@ class File(Base):
     uid: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.uid", ondelete="CASCADE"), nullable=False
     )
-    filename: Mapped[str] = mapped_column(String(100), nullable=False)
-    original_filename: Mapped[str] = mapped_column(String(100), nullable=False)
+    file_type: Mapped[str] = mapped_column(String(100), nullable=False)
     upload_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     private: Mapped[bool] = mapped_column(Boolean, nullable=False)
 

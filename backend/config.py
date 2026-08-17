@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     secret_key: str = Field(..., validation_alias="SECRET_KEY")
     expire_time: int = Field(..., validation_alias="EXPIRE_TIME")
     refresh_expire_time: int = Field(10080, validation_alias="REFRESH_EXPIRE_TIME")
+    file_url_expire_time: int = Field(1500, validation_alias="FILE_URL_EXPIRE_TIME")
 
     model_config = SettingsConfigDict(
         env_file=".env",

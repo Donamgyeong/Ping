@@ -11,8 +11,7 @@ CREATE INDEX idx_email ON users (email);
 CREATE TABLE files (
     fid CHAR(36) PRIMARY KEY,
     uid CHAR(36) NOT NULL,
-    filename VARCHAR(100) NOT NULL,
-    original_filename VARCHAR(100) NOT NULL,
+    file_type VARCHAR(100) NOT NULL,
     upload_date TIMESTAMP NOT NULL,
     private BOOLEAN NOT NULL,
     FOREIGN KEY (uid) REFERENCES users (uid) ON DELETE CASCADE
