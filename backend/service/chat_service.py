@@ -1,4 +1,4 @@
-from sqlalchemy import delete, update, select, desc
+from sqlalchemy import delete, update, select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 from redis.asyncio import Redis
@@ -85,7 +85,18 @@ async def add_message(
     content: str,
     message_date: datetime,
 ) -> int:
-    idx = await redis.incr("chat:" + cid, 1)
+    idx = await redis.incr("chat:count:" + cid, 1)
+    await redis.expire("chat:count:" + cid, 86400)
+    if not idx:
+        stmt = select(func.max(ChatMessage.message_idx)).where(ChatMessage.cid == cid)
+        result = await db.execute(stmt)
+        idx = result.scalar_one_or_none()
+
+        if not idx:
+            idx = 1
+        await redis.set("chat:count:" + cid, idx)
+        await redis.expire("chat:count:" + cid, 86400)
+
     new_message = ChatMessage(
         cid=cid, message_idx=idx, sender=uid, content=content, message_date=message_date
     )
@@ -112,8 +123,21 @@ async def get_chat_history(
             detail="User is not a participant in this chat.",
         )
 
-    count = await redis.get("chat:" + cid)
-    if not count or int(count) == last_idx:
+    count = await redis.get("chat:count:" + cid)
+    if not count:
+        stmt = select(func.max(ChatMessage.message_idx)).where(ChatMessage.cid == cid)
+        result = await db.execute(stmt)
+        count = result.scalar_one_or_none()
+
+        if count:
+            await redis.set("chat:count:" + cid, count)
+            await redis.expire("chat:count:" + cid, 86400)
+        else:
+            await redis.set("chat:count:" + cid, 0)
+            await redis.expire("chat:count:" + cid, 86400)
+            return []
+
+    if int(count) == last_idx:
         return []
     elif int(count) < last_idx:
         raise HTTPException(
