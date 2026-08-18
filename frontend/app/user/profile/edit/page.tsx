@@ -15,6 +15,7 @@ import {
   FileText,
 } from "lucide-react";
 import { convertHeicToJpeg } from "@/utils/heic";
+import { uploadFile, getFileUrl } from "@/utils/upload";
 
 export default function EditProfilePage() {
   const { token, uid, loading: authLoading, authFetch } = useAuth();
@@ -84,13 +85,10 @@ export default function EditProfilePage() {
             if (data.bio) setBio(data.bio);
             if (data.profile_picture) {
               setProfilePictureId(data.profile_picture);
-              fetch(`${API_URL}/file/get/${data.profile_picture}?thumbnail=true`, {
-                headers: { Authorization: `Bearer ${token}` },
-              })
-                .then((res) => (res.ok ? res.blob() : null))
-                .then((blob) => {
-                  if (blob) {
-                    setAvatarPreview(URL.createObjectURL(blob));
+              getFileUrl(data.profile_picture, token, true)
+                .then((url) => {
+                  if (url) {
+                    setAvatarPreview(url);
                   }
                 })
                 .catch(() => {});
@@ -121,44 +119,27 @@ export default function EditProfilePage() {
       file = await convertHeicToJpeg(file);
       setAvatarPreview(URL.createObjectURL(file));
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("private", "false");
+      // 1. Upload File
+      const fileId = await uploadFile(file, token, false);
 
-      const uploadRes = await fetch(`${API_URL}/file/upload`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
+      // 2. Update Profile Picture with fileId
+      const updateRes = await authFetch(
+        `${API_URL}/user/update/picture?profile_picture=${encodeURIComponent(
+          fileId
+        )}`,
+        { method: "POST" }
+      );
 
-      if (!uploadRes.ok) throw new Error("Failed to upload image file.");
-      const uploadData = await uploadRes.json();
-
-      if (uploadData.result === "success" && uploadData.id) {
-        const fileId = uploadData.id;
-
-        const updateRes = await authFetch(
-          `${API_URL}/user/update/picture?profile_picture=${encodeURIComponent(
-            fileId
-          )}`,
-          { method: "POST" }
-        );
-
-        const updateData = await updateRes.json();
-        if (updateRes.ok && updateData.result === "success") {
-          setProfilePictureId(fileId);
-          setAvatarPreview(URL.createObjectURL(file));
-          setPictureMessage({
-            type: "success",
-            text: "Profile picture updated successfully!",
-          });
-        } else {
-          throw new Error(updateData.detail || "Failed to update profile picture.");
-        }
+      const updateData = await updateRes.json();
+      if (updateRes.ok && updateData.result === "success") {
+        setProfilePictureId(fileId);
+        setAvatarPreview(URL.createObjectURL(file));
+        setPictureMessage({
+          type: "success",
+          text: "Profile picture updated successfully!",
+        });
       } else {
-        throw new Error("File upload response missing ID.");
+        throw new Error(updateData.detail || "Failed to update profile picture.");
       }
     } catch (err: any) {
       setPictureMessage({ type: "error", text: err.message });

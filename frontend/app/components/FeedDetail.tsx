@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { formatLocalDate } from "@/utils/date";
+import { getFileUrl } from "@/utils/upload";
 import { useAuth } from "@/hooks/useAuth";
 import { Trash2, MessageSquare, Send, MapPin } from "lucide-react";
 
@@ -112,39 +113,29 @@ export default function FeedDetail({ feed, onBack, token }: FeedDetailProps) {
 
   // 1. Fetch Feed Images
   useEffect(() => {
+    let isMounted = true;
+
     const fetchImageUrls = async () => {
       if (feed.images && feed.images.length > 0 && token) {
         const urls = await Promise.all(
           feed.images.map(async (imageId) => {
-            try {
-              const response = await fetch(`${API_URL}/file/get/${imageId}`, {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                },
-              });
-              if (!response.ok) {
-                console.error(`Failed to fetch image: ${imageId}`);
-                return "";
-              }
-              const blob = await response.blob();
-              return URL.createObjectURL(blob);
-            } catch (error) {
-              console.error(`Error fetching image ${imageId}:`, error);
-              return "";
-            }
+            const url = await getFileUrl(imageId, token, false);
+            return url || "";
           })
         );
-        setImageUrls(urls.filter((url) => url !== ""));
-        setCurrentImageIndex(0);
+        if (isMounted) {
+          setImageUrls(urls.filter((url) => url !== ""));
+          setCurrentImageIndex(0);
+        }
       }
     };
 
     fetchImageUrls();
 
     return () => {
-      imageUrls.forEach((url) => URL.revokeObjectURL(url));
+      isMounted = false;
     };
-  }, [feed.images, token, API_URL]);
+  }, [feed.images, token]);
 
   // 2. Fetch Comments
   const fetchComments = async () => {

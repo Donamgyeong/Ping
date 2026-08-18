@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { User as UserIcon, UserPlus, UserCheck, Clock, Settings, MapPin } from "lucide-react";
 import { fetchFeedAddressCached } from "@/utils/feedCache";
+import { getFileUrl } from "@/utils/upload";
 
 interface UserProfile {
   uid: string;
@@ -91,22 +92,13 @@ const FeedImageTile = memo(function FeedImageTile({
   useEffect(() => {
     if (!isVisible) return;
     let isMounted = true;
-    let objectUrl: string | null = null;
 
     const fetchImage = async () => {
       if (feed.images && feed.images.length > 0 && token) {
         try {
-          const response = await fetch(
-            `${API_URL}/file/get/${feed.images[0]}?thumbnail=true`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            }
-          );
-          if (!isMounted || !response.ok) return;
-          const blob = await response.blob();
-          objectUrl = URL.createObjectURL(blob);
-          if (isMounted) {
-            setImageUrl(objectUrl);
+          const url = await getFileUrl(feed.images[0], token, true);
+          if (isMounted && url) {
+            setImageUrl(url);
           }
         } catch (error) {
           console.error("Failed to fetch image", error);
@@ -118,11 +110,8 @@ const FeedImageTile = memo(function FeedImageTile({
 
     return () => {
       isMounted = false;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
     };
-  }, [isVisible, feed.images, token, API_URL]);
+  }, [isVisible, feed.images, token]);
 
   return (
     <div
@@ -238,12 +227,9 @@ export default function UserProfilePage() {
         setProfile(profileData);
 
         if (profileData.profile_picture) {
-          fetch(`${API_URL}/file/get/${profileData.profile_picture}?thumbnail=true`, {
-            headers: { Authorization: `Bearer ${token}` },
-          })
-            .then((res) => (res.ok ? res.blob() : null))
-            .then((blob) => {
-              if (blob) setAvatarUrl(URL.createObjectURL(blob));
+          getFileUrl(profileData.profile_picture, token, true)
+            .then((url) => {
+              if (url) setAvatarUrl(url);
             })
             .catch(() => {});
         }

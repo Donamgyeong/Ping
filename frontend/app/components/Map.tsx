@@ -15,6 +15,7 @@ import L from "leaflet";
 import { formatLocalDate } from "@/utils/date";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchSingleFeedDetailCached, fetchFeedAddressCached } from "@/utils/feedCache";
+import { getFileUrl } from "@/utils/upload";
 import { MapPin } from "lucide-react";
 
 const setupLeafletIcons = () => {
@@ -215,33 +216,18 @@ const FeedMarker = ({ feed }: { feed: FeedItem }) => {
     // Fetch image if present
     if (targetFeed.images && targetFeed.images.length > 0 && !imageUrl) {
       setLoadingImage(true);
-      try {
-        const response = await fetch(
-          `${API_URL}/file/get/${targetFeed.images[0]}?thumbnail=true`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        if (response.ok) {
-          const blob = await response.blob();
-          const objectUrl = URL.createObjectURL(blob);
-          setImageUrl(objectUrl);
-        }
-      } catch (err) {
-        console.error("Failed to load marker popup image:", err);
-      } finally {
-        setLoadingImage(false);
-      }
+      getFileUrl(targetFeed.images[0], token, true)
+        .then((url) => {
+          if (url) setImageUrl(url);
+        })
+        .catch((err) => {
+          console.error("Failed to load marker popup image:", err);
+        })
+        .finally(() => {
+          setLoadingImage(false);
+        });
     }
   }, [fetchAttempted, currentFeed, feed.fid, token, API_URL, imageUrl]);
-
-  useEffect(() => {
-    return () => {
-      if (imageUrl) {
-        URL.revokeObjectURL(imageUrl);
-      }
-    };
-  }, [imageUrl]);
 
   const handlePopupClick = () => {
     if (currentFeed?.fid) {

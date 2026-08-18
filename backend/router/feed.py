@@ -238,6 +238,7 @@ async def get_feed_by_hjd(
 async def get_feed(
     token: Annotated[str, Depends(oauth2_scheme)],
     fid: str,
+    redis: Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db),
 ) -> ResponseFeed:
     user = await validate_token(token, db)
@@ -269,6 +270,7 @@ async def get_feed(
             images=image_list,
             location=Location(long=point.x, lat=point.y),
         )
+        await redis.zincrby("feed:view", 1, fid)
 
         return ResponseFeed(result="success", feed=feedItem)
     except HTTPException as e:

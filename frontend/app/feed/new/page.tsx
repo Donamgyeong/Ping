@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import dynamic from "next/dynamic";
 import exifr from "exifr";
 import { processImageFiles } from "@/utils/heic";
+import { uploadFile } from "@/utils/upload";
 import { PlusCircle, Upload, X, ArrowLeft, Lock, Globe } from "lucide-react";
 
 const LocationPicker = dynamic(
@@ -155,25 +156,8 @@ export default function NewFeedPage() {
       const imageIds: string[] = [];
       if (files.length > 0) {
         for (const file of files) {
-          const formData = new FormData();
-          formData.append("file", file);
-          formData.append("private", String(isPrivate));
-
-          const response = await fetch(`${API_URL}/file/upload`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            body: formData,
-          });
-
-          if (!response.ok) {
-            throw new Error("Image upload failed.");
-          }
-          const data = await response.json();
-          if (data.result === "success" && data.id) {
-            imageIds.push(data.id);
-          }
+          const fid = await uploadFile(file, token, isPrivate);
+          imageIds.push(fid);
         }
       }
 

@@ -68,6 +68,28 @@ async def get_upload_url_from_minio(
                 bucket_name=bucket,
                 object_name=object_name,
                 expires=timedelta(seconds=settings.file_url_expire_time),
+            ).replace(
+                f"http://{settings.s3_endpoint}",
+                f"https://{settings.external_host}:9000",
+            ),
+            datetime.now() + timedelta(seconds=settings.file_url_expire_time),
+        )
+
+    return await asyncio.to_thread(_get)
+
+
+async def get_download_url_from_minio(
+    bucket: str, object_name: str
+) -> tuple[str, datetime]:
+    def _get():
+        return (
+            client.presigned_get_object(
+                bucket_name=bucket,
+                object_name=object_name,
+                expires=timedelta(seconds=settings.file_url_expire_time),
+            ).replace(
+                f"http://{settings.s3_endpoint}",
+                f"https://{settings.external_host}:9000",
             ),
             datetime.now() + timedelta(seconds=settings.file_url_expire_time),
         )

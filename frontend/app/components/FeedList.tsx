@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo, memo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { formatLocalDate } from "@/utils/date";
+import { getFileUrl } from "@/utils/upload";
 import { Plus, User, MapPin, Loader2, Image as ImageIcon } from "lucide-react";
 
 interface FeedItem {
@@ -66,20 +67,13 @@ const FeedListItem = memo(function FeedListItem({
   useEffect(() => {
     if (!isVisible || !token || !feed.images || feed.images.length === 0) return;
     let isMounted = true;
-    let objectUrl: string | null = null;
 
     const fetchImage = async () => {
       try {
-        const response = await fetch(
-          `${API_URL}/file/get/${feed.images[0]}?thumbnail=true`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        if (!isMounted || !response.ok) return;
-        const blob = await response.blob();
-        objectUrl = URL.createObjectURL(blob);
-        if (isMounted) setImageUrl(objectUrl);
+        const url = await getFileUrl(feed.images[0], token, true);
+        if (isMounted && url) {
+          setImageUrl(url);
+        }
       } catch (err) {
         console.error("Failed to fetch feed list item thumbnail:", err);
       }
@@ -89,9 +83,8 @@ const FeedListItem = memo(function FeedListItem({
 
     return () => {
       isMounted = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [isVisible, feed.images, token, API_URL]);
+  }, [isVisible, feed.images, token]);
 
   const hasImage = feed.images && feed.images.length > 0;
 
