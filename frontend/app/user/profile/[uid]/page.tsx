@@ -2,6 +2,7 @@
 
 import { useEffect, useState, memo, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { User as UserIcon, UserPlus, UserCheck, Clock, Settings, MapPin } from "lucide-react";
 import { fetchFeedAddressCached } from "@/utils/feedCache";
@@ -491,18 +492,24 @@ export default function UserProfilePage() {
                 게시물{" "}
                 <span className="font-bold text-white ml-1">{rawFeedIds.length}</span>
               </div>
-              <div>
+              <Link
+                href={`/user/profile/${uid}/followers`}
+                className="hover:text-blue-400 transition-colors cursor-pointer group"
+              >
                 팔로워{" "}
-                <span className="font-bold text-white ml-1">
+                <span className="font-bold text-white group-hover:text-blue-400 ml-1 transition-colors">
                   {followers.length}
                 </span>
-              </div>
-              <div>
+              </Link>
+              <Link
+                href={`/user/profile/${uid}/following`}
+                className="hover:text-blue-400 transition-colors cursor-pointer group"
+              >
                 팔로잉{" "}
-                <span className="font-bold text-white ml-1">
+                <span className="font-bold text-white group-hover:text-blue-400 ml-1 transition-colors">
                   {following.length}
                 </span>
-              </div>
+              </Link>
             </div>
 
             {isMyProfile && (

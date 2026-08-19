@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, memo } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { getFileUrl } from "@/utils/upload";
 import { User, Loader2, MessageSquare, Send, ArrowLeft } from "lucide-react";
 
 interface Message {
@@ -21,6 +22,99 @@ interface ChatRoomViewProps {
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+const userProfileCache = new Map<string, { nickname: string; avatarUrl: string | null }>();
+const pendingFetches = new Map<string, Promise<{ nickname: string; avatarUrl: string | null } | null>>();
+
+async function fetchUserProfileData(uid: string, token: string, apiUrl: string) {
+  if (userProfileCache.has(uid)) {
+    return userProfileCache.get(uid)!;
+  }
+  if (pendingFetches.has(uid)) {
+    return pendingFetches.get(uid)!;
+  }
+
+  const promise = (async () => {
+    try {
+      const res = await fetch(`${apiUrl}/user/profile/${uid}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        let avatarUrl: string | null = null;
+        if (data.profile_picture) {
+          avatarUrl = await getFileUrl(data.profile_picture, token, true);
+        }
+        const profile = {
+          nickname: data.nickname || uid.slice(0, 6),
+          avatarUrl,
+        };
+        userProfileCache.set(uid, profile);
+        return profile;
+      }
+    } catch (e) {
+      console.error("Failed to fetch user profile in chat:", e);
+    } finally {
+      pendingFetches.delete(uid);
+    }
+    return null;
+  })();
+
+  pendingFetches.set(uid, promise);
+  return promise;
+}
+
+const UserAvatarWithNickname = memo(function UserAvatarWithNickname({
+  uid,
+  token,
+  apiUrl,
+}: {
+  uid: string;
+  token: string | null;
+  apiUrl: string;
+}) {
+  const [profile, setProfile] = useState<{ nickname: string; avatarUrl: string | null }>(() => {
+    return userProfileCache.get(uid) || { nickname: "", avatarUrl: null };
+  });
+
+  useEffect(() => {
+    if (!token || !uid) return;
+    let isMounted = true;
+
+    fetchUserProfileData(uid, token, apiUrl).then((data) => {
+      if (isMounted && data) {
+        setProfile(data);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [uid, token, apiUrl]);
+
+  return (
+    <Link
+      href={`/user/profile/${uid}`}
+      className="flex flex-col items-center gap-1 shrink-0 max-w-[48px] sm:max-w-[56px] group cursor-pointer"
+      title={profile.nickname || uid}
+    >
+      <div className="w-8 h-8 rounded-full bg-gray-800 border border-gray-700 group-hover:border-blue-500 flex items-center justify-center text-gray-300 shrink-0 overflow-hidden shadow-xs transition-colors">
+        {profile.avatarUrl ? (
+          <img
+            src={profile.avatarUrl}
+            alt={profile.nickname || "avatar"}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <User className="w-4 h-4 text-gray-400 group-hover:text-blue-400 transition-colors" />
+        )}
+      </div>
+      <span className="text-[10px] text-gray-400 group-hover:text-blue-400 font-medium truncate w-full text-center leading-tight transition-colors">
+        {profile.nickname || uid.slice(0, 5)}
+      </span>
+    </Link>
+  );
+});
 
 export default function ChatRoomView({ cid }: ChatRoomViewProps) {
   const { token, uid, loading, authFetch } = useAuth();
@@ -205,28 +299,22 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
                   </div>
                 )}
                 <div
-                  className={`flex items-end gap-2 ${
+                  className={`flex items-start gap-2.5 ${
                     msg.uid === uid ? "justify-end" : "justify-start"
                   }`}
                 >
                   {msg.uid !== uid && (
-                    <div className="w-8 h-8 rounded-full bg-gray-700 border border-gray-600 flex items-center justify-center text-gray-300 shrink-0 mb-1 overflow-hidden">
-                      {msg.avatar ? (
-                        <img
-                          src={msg.avatar}
-                          alt="avatar"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <User className="w-4 h-4" />
-                      )}
-                    </div>
+                    <UserAvatarWithNickname
+                      uid={msg.uid}
+                      token={token}
+                      apiUrl={API_URL}
+                    />
                   )}
                   <div
-                    className={`max-w-[85%] sm:max-w-[75%] px-3.5 py-2.5 sm:px-4 rounded-2xl shadow-sm ${
+                    className={`max-w-[80%] sm:max-w-[72%] px-3.5 py-2.5 sm:px-4 rounded-2xl shadow-sm ${
                       msg.uid === uid
-                        ? "bg-blue-600 text-white rounded-br-none"
-                        : "bg-gray-800 text-gray-100 border border-gray-700 rounded-bl-none"
+                        ? "bg-blue-600 text-white rounded-tr-none"
+                        : "bg-gray-800 text-gray-100 border border-gray-700 rounded-tl-none"
                     }`}
                   >
                     <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{msg.message}</p>

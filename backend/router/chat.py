@@ -56,7 +56,6 @@ async def new_chat(
                 detail="Participant list cannot be empty.",
             )
 
-        # Check if all participants exist
         for participant_uid in participant_set:
             user = await get_user_by_uid(db, participant_uid)
             if not user:
@@ -207,6 +206,29 @@ async def get_chat(
         raise e
     except Exception as e:
         logging.error(f"Error getting chat history for cid {cid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.post("/{cid}/{last_id}/read")
+async def update_chat_read(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    cid: str,
+    last_idx: int,
+    redis: Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
+) -> ResponseBase:
+    user = await validate_token(token, db)
+    try:
+        await db.commit()
+        return ResponseBase(result="success")
+    except HTTPException as e:
+        await db.rollback()
+        raise e
+    except Exception as e:
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",

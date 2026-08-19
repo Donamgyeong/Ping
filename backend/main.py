@@ -109,6 +109,8 @@ async def websocket_endpoint(
         logging.info(f"Client connection has Exception. {e}")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
     finally:
+        for task in pending:
+            task.cancel()
         await db.commit()
 
         if pubsub:
