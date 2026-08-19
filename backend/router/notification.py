@@ -42,7 +42,7 @@ async def get_cnt(
     token: Annotated[str, Depends(oauth2_scheme)],
     redis: Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db),
-):
+) -> ResponseCnt:
     user = await validate_token(token, db)
     try:
         cnt = await get_notification_cnt(user.uid, redis)

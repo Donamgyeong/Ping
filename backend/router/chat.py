@@ -1,14 +1,9 @@
-import asyncio
-import json
 from typing import Annotated
 from fastapi import (
     APIRouter,
     Depends,
-    WebSocket,
     HTTPException,
     status,
-    WebSocketDisconnect,
-    WebSocketException,
 )
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +11,6 @@ from library.model import (
     ResponseBase,
     ResponseID,
     ResponseChat,
-    ChatItem,
     ChatNew,
     ResponseChatroom,
     Chatroom,
@@ -29,14 +23,12 @@ from service.chat_service import (
     remove_participant,
     add_participant,
     get_chatrooms_by_user,
-    add_message,
     get_chatroom_info,
     get_chat_history,
 )
 from library.db import get_db
 from library.redis import get_redis
 from redis.asyncio import Redis
-from datetime import datetime, timezone
 import logging
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -219,120 +211,3 @@ async def get_chat(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
         )
-
-
-async def redis_reader(websocket: WebSocket, pubsub):
-    try:
-        while True:
-            message = await pubsub.get_message(
-                ignore_subscribe_messages=True, timeout=None
-            )
-            if message:
-                await websocket.send_text(message["data"])
-    except Exception as e:
-        await websocket.close()
-        logging.warning(f"Redis reader error: {e}")
-
-
-async def client_reader(
-    websocket: WebSocket, user_uid: str, redis: Redis, db: AsyncSession, cids: list[str]
-):
-    try:
-        while True:
-            data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
-            message_data = json.loads(data)
-
-            if message_data.get("type") == "ping":
-                await websocket.send_json({"type": "pong"})
-            else:
-                cid = message_data.get("cid")
-                message = message_data.get("message")
-                date = datetime.now(timezone.utc)
-
-                if not cid or not message:
-                    continue
-
-                if cid not in cids:
-                    logging.warning(
-                        f"User {user_uid} tried to send message to unauthorized chat room {cid}"
-                    )
-                    continue
-
-                idx = await add_message(db, redis, cid, user_uid, message, date)
-
-                chat_item = ChatItem(
-                    idx=idx, cid=cid, uid=user_uid, message=message, date=date
-                )
-
-                await redis.rpush(f"chat:{cid}:recent", chat_item.model_dump_json())
-                await redis.ltrim(f"chat:{cid}:recent", -50, -1)
-
-                await redis.publish(f"chat:{cid}", chat_item.model_dump_json())
-    except WebSocketDisconnect:
-        logging.info(f"Client {user_uid} disconnected.")
-    except Exception as e:
-        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
-        logging.warning(f"Client reader error for {user_uid}: {e}")
-
-
-async def periodic_commit(db: AsyncSession, interval_seconds: int):
-    while True:
-        await asyncio.sleep(interval_seconds)
-        try:
-            await db.commit()
-            logging.info("Periodic commit successful.")
-        except Exception as e:
-            logging.error(f"Periodic commit failed: {e}")
-
-
-@router.websocket("/ws")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    db: AsyncSession = Depends(get_db),
-    redis: Redis = Depends(get_redis),
-):
-    await websocket.accept()
-    pubsub = None
-    try:
-        auth_msg = await asyncio.wait_for(websocket.receive_json(), timeout=5.0)
-        if auth_msg.get("type") != "AUTH":
-            raise WebSocketException(
-                code=status.WS_1008_POLICY_VIOLATION,
-                reason="Authorization header is missing",
-            )
-
-        token = auth_msg.get("payload")
-        if not token:
-            raise WebSocketException(
-                code=status.WS_1008_POLICY_VIOLATION,
-                reason="Token is missing",
-            )
-
-        user = await validate_token(token.replace("Bearer ", ""), db)
-
-        cids = await get_chatrooms_by_user(db, user.uid)
-        pubsub = redis.pubsub()
-        if cids:
-            await pubsub.subscribe(*[f"chat:{cid}" for cid in cids])
-
-        redis_task = asyncio.create_task(redis_reader(websocket, pubsub))
-        client_task = asyncio.create_task(
-            client_reader(websocket, user.uid, redis, db, cids)
-        )
-        commit_task = asyncio.create_task(periodic_commit(db, 60))
-
-        done, pending = await asyncio.wait(
-            [redis_task, client_task, commit_task],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-    except (WebSocketException, HTTPException, ValueError, asyncio.TimeoutError) as e:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-    finally:
-        for task in pending:
-            task.cancel()
-
-        await db.commit()
-
-        if pubsub:
-            await pubsub.unsubscribe()
-            await pubsub.aclose()

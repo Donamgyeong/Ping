@@ -4,42 +4,25 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { Radio, Rss, MessageSquare, User, LogOut, LogIn, Grid, Bell } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function Navbar() {
-  const { token, uid, logout, authFetch } = useAuth();
+  const { token, uid, logout } = useAuth();
+  const { unreadNotiCount, setUnreadNotiCount, refreshUnreadCount } = useWebSocket();
   const isLoggedIn = !!token;
   const pathname = usePathname();
-  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    if (!isLoggedIn) {
-      setUnreadCount(0);
-      return;
+    if (pathname.startsWith('/notification')) {
+      setUnreadNotiCount(0);
     }
-
-    const fetchUnreadCount = async () => {
-      try {
-        const res = await authFetch(`${API_URL}/notification/get/count`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.result === 'OK' && typeof data.cnt === 'number') {
-            setUnreadCount(data.cnt > 0 ? data.cnt : 0);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch notification count:', error);
-      }
-    };
-
-    fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 15000);
-    return () => clearInterval(interval);
-  }, [isLoggedIn, pathname, authFetch]);
+  }, [pathname, setUnreadNotiCount]);
 
   const isInsideChat = pathname.startsWith('/chat/') && pathname !== '/chat';
+  const unreadCount = unreadNotiCount;
 
   return (
     <>

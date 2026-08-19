@@ -5,6 +5,7 @@ from redis.asyncio import Redis
 from library.schema import *
 from library.model import *
 from uuid import uuid4
+import json
 
 
 async def create_chat(
@@ -77,6 +78,13 @@ async def get_chatroom_info(db: AsyncSession, cids: list[str]) -> list[Chat]:
     return list(result.scalars().all())
 
 
+async def get_chatroom_participant(db: AsyncSession, cid: str) -> list[str]:
+    stmt = select(ChatParticipant.uid).where(ChatParticipant.cid == cid)
+    result = await db.execute(stmt)
+
+    return list(result.scalars().all())
+
+
 async def add_message(
     db: AsyncSession,
     redis: Redis,
@@ -85,6 +93,10 @@ async def add_message(
     content: str,
     message_date: datetime,
 ) -> int:
+    participants = await get_chatroom_participant(db, cid)
+    if not uid in participants:
+        return -1
+
     idx = await redis.incr("chat:count:" + cid, 1)
     await redis.expire("chat:count:" + cid, 86400)
     if not idx:
@@ -97,10 +109,17 @@ async def add_message(
         await redis.set("chat:count:" + cid, idx)
         await redis.expire("chat:count:" + cid, 86400)
 
+    chat_item = ChatItem(idx=idx, cid=cid, uid=uid, message=content, date=message_date)
+    sock_msg = SocketMsg(type="CHAT", payload=chat_item)
+
+    await redis.rpush(f"chat:{cid}:recent", chat_item.model_dump_json())
+    await redis.ltrim(f"chat:{cid}:recent", -50, -1)
+    for p in participants:
+        await redis.publish(f"user:{p}", sock_msg.model_dump(mode="json").__str__())
+
     new_message = ChatMessage(
         cid=cid, message_idx=idx, sender=uid, content=content, message_date=message_date
     )
-
     db.add(new_message)
 
     return idx

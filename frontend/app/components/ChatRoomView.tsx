@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
+import { useWebSocket } from "@/hooks/useWebSocket";
 import { User, Loader2, MessageSquare, Send, ArrowLeft } from "lucide-react";
 
 interface Message {
@@ -20,16 +21,15 @@ interface ChatRoomViewProps {
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-const WEBSOCKET_URL = API_URL.replace(/^http/, "ws");
 
 export default function ChatRoomView({ cid }: ChatRoomViewProps) {
   const { token, uid, loading, authFetch } = useAuth();
+  const { sendChatMessage, subscribeChat } = useWebSocket();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [isInitialLoaded, setIsInitialLoaded] = useState(false);
 
-  const socketRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
   const scrollContainerRef = useRef<null | HTMLDivElement>(null);
 
@@ -69,80 +69,26 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
     }
   }, [cid, token, loading, authFetch]);
 
-  // 3. WebSocket Connection
+  // 3. Subscribe to real-time chat messages from global WebSocket
   useEffect(() => {
-    if (!loading && cid && token) {
-      const socket = new WebSocket(`${WEBSOCKET_URL}/chat/ws`);
-      socketRef.current = socket;
-      let pingInterval: NodeJS.Timeout | null = null;
+    if (!cid) return;
 
-      socket.onopen = () => {
-        console.log("WebSocket connection established");
-        socket.send(
-          JSON.stringify({
-            type: "AUTH",
-            payload: token,
-          })
-        );
-
-        // 30초 백엔드 타임아웃 방지를 위해 25초마다 heartbeat ping 전송
-        pingInterval = setInterval(() => {
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ type: "ping" }));
-          }
-        }, 25000);
-      };
-
-      socket.onmessage = (event) => {
-        try {
-          const messageData = JSON.parse(event.data);
-          // 서버에서 온 pong 또는 제어 메시지 예외 처리
-          if (messageData.type === "pong") {
-            return;
-          }
-          if (messageData.message && (!messageData.cid || messageData.cid === cid)) {
-            setMessages((prevMessages) => {
-              if (
-                messageData.idx !== undefined &&
-                prevMessages.some((m) => m.idx === messageData.idx)
-              ) {
-                return prevMessages;
-              }
-              return [...prevMessages, messageData];
-            });
-          }
-        } catch (e) {
-          console.error("Failed to parse WebSocket message:", e);
-        }
-      };
-
-      socket.onclose = () => {
-        console.log("WebSocket connection closed");
-        if (pingInterval) clearInterval(pingInterval);
-      };
-
-      socket.onerror = (error) => {
-        console.error("WebSocket error:", error);
-      };
-
-      return () => {
-        if (pingInterval) clearInterval(pingInterval);
-        socket.onopen = null;
-        socket.onmessage = null;
-        socket.onclose = null;
-        socket.onerror = null;
+    const unsubscribe = subscribeChat(cid, (chatItem) => {
+      setMessages((prevMessages) => {
         if (
-          socket.readyState === WebSocket.OPEN ||
-          socket.readyState === WebSocket.CONNECTING
+          chatItem.idx !== undefined &&
+          prevMessages.some((m) => m.idx === chatItem.idx)
         ) {
-          socket.close();
+          return prevMessages;
         }
-        if (socketRef.current === socket) {
-          socketRef.current = null;
-        }
-      };
-    }
-  }, [cid, token, loading]);
+        return [...prevMessages, chatItem];
+      });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [cid, subscribeChat]);
 
   // 6. Scroll to bottom on initial load & new incoming message
   useEffect(() => {
@@ -184,14 +130,11 @@ export default function ChatRoomView({ cid }: ChatRoomViewProps) {
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newMessage.trim() && socketRef.current?.readyState === WebSocket.OPEN && cid) {
-      const message = {
-        cid,
-        message: newMessage.trim(),
-        uid,
-      };
-      socketRef.current.send(JSON.stringify(message));
-      setNewMessage("");
+    if (newMessage.trim() && cid) {
+      const success = sendChatMessage(cid, newMessage.trim());
+      if (success) {
+        setNewMessage("");
+      }
     }
   };
 

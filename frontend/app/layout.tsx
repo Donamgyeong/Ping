@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import Navbar from "./components/Navbar";
+import ToastBannerContainer from "./components/ToastBannerContainer";
 import { AuthProvider } from "@/hooks/useAuth";
+import { WebSocketProvider } from "@/hooks/useWebSocket";
 import "./globals.css";
 import "./main.css";
-import 'leaflet/dist/leaflet.css';
+import "leaflet/dist/leaflet.css";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -22,8 +24,11 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <AuthProvider>
-          <Navbar />
-          <main>{children}</main>
+          <WebSocketProvider>
+            <Navbar />
+            <main>{children}</main>
+            <ToastBannerContainer />
+          </WebSocketProvider>
         </AuthProvider>
       </body>
     </html>

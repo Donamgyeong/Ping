@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
+from typing import Literal
 
 
 class Noti(BaseModel):
@@ -228,3 +229,8 @@ class ResponseCnt(ResponseBase):
 class ResponseFileURL(ResponseBase):
     url: str
     valid_until: datetime
+
+
+class SocketMsg(BaseModel):
+    type: str | Literal["CHAT", "NOTI", "PONG", "PING", "AUTH"]
+    payload: ChatItem | Noti | str | None

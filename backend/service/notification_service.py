@@ -8,7 +8,7 @@ from library.schema import Notification
 
 
 async def publish_notification(db: AsyncSession, redis: Redis, notification: Noti):
-    noti_id = uuid4()
+    noti_id = uuid4().__str__()
     noti = Notification(
         noti_id=noti_id,
         type=notification.type,
@@ -17,8 +17,12 @@ async def publish_notification(db: AsyncSession, redis: Redis, notification: Not
         link=notification.link,
         date=notification.date,
     )
+    notification.noti_id = noti_id
 
-    await redis.incr("noti:cnt:" + notification.receiver)
+    sock_msg = SocketMsg(type="NOTI", payload=notification)
+
+    await redis.incr(f"noti:cnt:{notification.receiver}")
+    await redis.publish(f"user:{notification.receiver}", sock_msg.model_dump_json())
 
     db.add(noti)
     await db.flush()
@@ -36,8 +40,7 @@ async def get_notification_entry(
     result = await db.execute(stmt)
     entries = list(result.scalars())
 
-    cnt = len(entries)
-    await redis.decr("noti:cnt:" + uid, cnt)
+    await redis.set(f"noti:cnt:{uid}", 0)
 
     return entries
 
