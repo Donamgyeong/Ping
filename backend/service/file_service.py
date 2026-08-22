@@ -59,6 +59,13 @@ async def new_pending_upload(uid: str, private: bool, redis: Redis) -> str:
     return fid
 
 
+async def get_file_records(db: AsyncSession) -> list[str]:
+    stmt = select(File.fid)
+    result = await db.execute(stmt)
+
+    return list(result.scalars())
+
+
 async def get_file_by_fid(db: AsyncSession, fid: str) -> File | None:
     stmt = select(File).where(File.fid == fid)
     result = await db.execute(stmt)

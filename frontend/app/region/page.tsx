@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { formatLocalDate } from "@/utils/date";
-import { fetchSingleFeedDetailCached, fetchFeedAddressCached, FeedItem } from "@/utils/feedCache";
+import {
+  fetchSingleFeedDetailCached,
+  fetchFeedAddressCached,
+  FeedItem,
+} from "@/utils/feedCache";
 import { getFileUrl } from "@/utils/upload";
 import {
   MapPin,
@@ -43,7 +47,10 @@ interface FeedTileProps {
 
 const BATCH_SIZE = 18;
 
-const RegionFeedTile = memo(function RegionFeedTile({ feed, onSelect }: FeedTileProps) {
+const RegionFeedTile = memo(function RegionFeedTile({
+  feed,
+  onSelect,
+}: FeedTileProps) {
   const { token } = useAuth();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [address, setAddress] = useState<string | null>(null);
@@ -200,7 +207,9 @@ export default function RegionalFeedGridPage() {
   const [emdList, setEmdList] = useState<EmdItem[]>([]);
 
   const [selectedSido, setSelectedSido] = useState<SidoItem | null>(null);
-  const [selectedSigungu, setSelectedSigungu] = useState<SigunguItem | null>(null);
+  const [selectedSigungu, setSelectedSigungu] = useState<SigunguItem | null>(
+    null
+  );
   const [selectedEmd, setSelectedEmd] = useState<EmdItem | null>(null);
 
   const [loadingSido, setLoadingSido] = useState(false);
@@ -212,7 +221,12 @@ export default function RegionalFeedGridPage() {
 
   // Feed loading state
   const [rawLocations, setRawLocations] = useState<
-    { fid: string; uid: string; location?: { lat: number; long: number }; post_date: string }[]
+    {
+      fid: string;
+      uid: string;
+      location?: { lat: number; long: number };
+      post_date: string;
+    }[]
   >([]);
   const [feeds, setFeeds] = useState<FeedItem[]>([]);
   const [loadingFeeds, setLoadingFeeds] = useState(true);
@@ -315,7 +329,12 @@ export default function RegionalFeedGridPage() {
   // Helper to fetch details for a batch of feed locations
   const fetchFeedDetailsBatch = useCallback(
     async (
-      batchItems: { fid: string; uid: string; location?: { lat: number; long: number }; post_date: string }[],
+      batchItems: {
+        fid: string;
+        uid: string;
+        location?: { lat: number; long: number };
+        post_date: string;
+      }[],
       authToken: string
     ): Promise<FeedItem[]> => {
       const promises = batchItems.map((item) =>
@@ -340,7 +359,12 @@ export default function RegionalFeedGridPage() {
       "";
 
     try {
-      let fetchedLocations: { fid: string; uid: string; location?: { lat: number; long: number }; post_date: string }[] = [];
+      let fetchedLocations: {
+        fid: string;
+        uid: string;
+        location?: { lat: number; long: number };
+        post_date: string;
+      }[] = [];
 
       if (activeCode) {
         // Use newly added backend endpoint GET /feed/hjd/get/{code}
@@ -354,23 +378,16 @@ export default function RegionalFeedGridPage() {
           }
         }
       } else {
-        // Initial state (all regions): query nationwide BBox
-        const koreaBBox = {
-          SW: { lat: 33.0, long: 124.0 },
-          NE: { lat: 38.9, long: 132.0 },
-        };
-        const feedRes = await fetch(`${API_URL}/feed/get/location?zoom=16`, {
-          method: "POST",
+        const feedRes = await fetch(`${API_URL}/feed/hot`, {
+          method: "GET",
           headers: {
-            "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify(koreaBBox),
         });
         if (feedRes.ok) {
           const feedData = await feedRes.json();
-          if (feedData.result === "success" && feedData.feeds) {
-            fetchedLocations = feedData.feeds;
+          if (feedData.result === "success" && feedData.feedid) {
+            fetchedLocations = feedData.feedid;
           }
         }
       }
@@ -387,7 +404,8 @@ export default function RegionalFeedGridPage() {
 
       // Sort newest first by post_date
       uniqueList.sort(
-        (a, b) => new Date(b.post_date).getTime() - new Date(a.post_date).getTime()
+        (a, b) =>
+          new Date(b.post_date).getTime() - new Date(a.post_date).getTime()
       );
 
       setRawLocations(uniqueList);
@@ -404,7 +422,14 @@ export default function RegionalFeedGridPage() {
     } finally {
       setLoadingFeeds(false);
     }
-  }, [token, API_URL, fetchFeedDetailsBatch, selectedSido, selectedSigungu, selectedEmd]);
+  }, [
+    token,
+    API_URL,
+    fetchFeedDetailsBatch,
+    selectedSido,
+    selectedSigungu,
+    selectedEmd,
+  ]);
 
   // Trigger feed load when region selection changes
   useEffect(() => {
@@ -481,13 +506,10 @@ export default function RegionalFeedGridPage() {
     setSearchQuery("");
   };
 
-  const regionTitleLabel = [
-    selectedSido?.sido_nm,
-    selectedSigungu?.sgg_nm,
-    selectedEmd?.emd_nm,
-  ]
-    .filter(Boolean)
-    .join(" ") || "전체 지역";
+  const regionTitleLabel =
+    [selectedSido?.sido_nm, selectedSigungu?.sgg_nm, selectedEmd?.emd_nm]
+      .filter(Boolean)
+      .join(" ") || "전체 지역";
 
   if (authLoading || !isAuthenticated) {
     return (
@@ -558,7 +580,9 @@ export default function RegionalFeedGridPage() {
               <select
                 value={selectedSido?.sido_cd ?? ""}
                 onChange={(e) => {
-                  const found = sidoList.find((s) => s.sido_cd === e.target.value);
+                  const found = sidoList.find(
+                    (s) => s.sido_cd === e.target.value
+                  );
                   setSelectedSido(found ?? null);
                 }}
                 disabled={loadingSido}
@@ -578,11 +602,17 @@ export default function RegionalFeedGridPage() {
             </div>
 
             {/* SIGUNGU */}
-            <div className={`relative transition-opacity ${selectedSido ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
+            <div
+              className={`relative transition-opacity ${
+                selectedSido ? "opacity-100" : "opacity-40 pointer-events-none"
+              }`}
+            >
               <select
                 value={selectedSigungu?.sigungu_cd ?? ""}
                 onChange={(e) => {
-                  const found = sigunguList.find((s) => s.sigungu_cd === e.target.value);
+                  const found = sigunguList.find(
+                    (s) => s.sigungu_cd === e.target.value
+                  );
                   setSelectedSigungu(found ?? null);
                 }}
                 disabled={loadingSigungu || !selectedSido}
@@ -602,11 +632,19 @@ export default function RegionalFeedGridPage() {
             </div>
 
             {/* EMD */}
-            <div className={`relative transition-opacity ${selectedSigungu ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
+            <div
+              className={`relative transition-opacity ${
+                selectedSigungu
+                  ? "opacity-100"
+                  : "opacity-40 pointer-events-none"
+              }`}
+            >
               <select
                 value={selectedEmd?.emd_cd ?? ""}
                 onChange={(e) => {
-                  const found = emdList.find((s) => s.emd_cd === e.target.value);
+                  const found = emdList.find(
+                    (s) => s.emd_cd === e.target.value
+                  );
                   setSelectedEmd(found ?? null);
                 }}
                 disabled={loadingEmd || !selectedSigungu}
@@ -646,7 +684,9 @@ export default function RegionalFeedGridPage() {
         {loadingFeeds ? (
           <div className="py-24 text-center text-gray-400 flex flex-col items-center justify-center">
             <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-3" />
-            <p className="text-sm font-medium">선택하신 지역의 피드를 불러오는 중입니다...</p>
+            <p className="text-sm font-medium">
+              선택하신 지역의 피드를 불러오는 중입니다...
+            </p>
           </div>
         ) : error ? (
           <div className="bg-red-950/40 border border-red-900/60 rounded-2xl p-8 text-center text-red-300 max-w-md mx-auto my-12 shadow-xl">
@@ -664,7 +704,9 @@ export default function RegionalFeedGridPage() {
               <Compass className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-base font-bold text-gray-300">피드가 없습니다</p>
+              <p className="text-base font-bold text-gray-300">
+                피드가 없습니다
+              </p>
               <p className="text-xs text-gray-500 mt-1">
                 {selectedSido
                   ? `${regionTitleLabel}에 아직 등록된 피드가 없습니다. 다른 지역을 선택해보세요.`
@@ -695,8 +737,14 @@ export default function RegionalFeedGridPage() {
             {/* Infinite Scroll Loader */}
             {processedCount < rawLocations.length && (
               <div className="py-8 text-center text-xs text-gray-400 flex justify-center items-center gap-2">
-                {loadingMore && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
-                <span>{loadingMore ? "더 많은 피드를 불러오는 중..." : "스크롤하여 더 보기"}</span>
+                {loadingMore && (
+                  <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                )}
+                <span>
+                  {loadingMore
+                    ? "더 많은 피드를 불러오는 중..."
+                    : "스크롤하여 더 보기"}
+                </span>
               </div>
             )}
           </>

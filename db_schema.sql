@@ -92,6 +92,7 @@ CREATE TABLE chat (
 CREATE TABLE chat_participant (
     cid CHAR(36) NOT NULL,
     uid CHAR(36) NOT NULL,
+    last_read BIGINT DEFAULT 0,
     PRIMARY KEY (cid, uid),
     FOREIGN KEY (cid) REFERENCES chat (cid) ON DELETE CASCADE,
     FOREIGN KEY (uid) REFERENCES users (uid) ON DELETE CASCADE

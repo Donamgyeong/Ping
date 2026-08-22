@@ -1,6 +1,7 @@
 from typing import Annotated
 from fastapi import APIRouter, Depends, Form, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from fastapi_restful.tasks import repeat_every
 from library.model import ResponseBase, ResponseFileURL
 from sqlalchemy.ext.asyncio import AsyncSession
 from library.db import get_db
@@ -9,15 +10,16 @@ from service.file_service import (
     make_thumbnail,
     new_file,
     get_file_by_fid,
+    get_file_records,
     delete_file_record,
     new_pending_upload,
 )
 from library.minio import (
     get_download_url_from_minio,
     delete_from_minio,
-    get_from_minio,
     find_from_minio,
     get_upload_url_from_minio,
+    get_file_list_from_minio,
 )
 import logging
 from datetime import datetime
@@ -157,19 +159,14 @@ async def get_file(
         )
 
 
-@router.get("/geojson/{code}")
-async def get_geojson_from_minio(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    code: str,
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    user = await validate_token(token, db)
+@repeat_every(seconds=86400)
+async def delete_invalid_files(db: AsyncSession = Depends(get_db)):
     try:
-        file_stream = await get_from_minio(settings.s3_geo_bucket, code + ".geojson")
-        return file_stream.json()
+        saved_files = await get_file_list_from_minio(image_bucket)
+        file_records = await get_file_records(db)
+
+        for f in saved_files:
+            if not f in file_records:
+                await delete_from_minio(image_bucket, f)
     except Exception as e:
-        logging.error(f"Error retrieving GeoJSON from MinIO: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal Server Error",
-        )
+        logging.error(f"Error deleting invalid files: {e}")

@@ -120,33 +120,47 @@ async def websocket_endpoint(
 
 async def redis_reader(websocket: WebSocket, pubsub: PubSub):
     while True:
-        msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=None)
-        if msg:
-            await websocket.send_json(msg.get("data"))
+        try:
+            msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=None)
+            if msg:
+                await websocket.send_json(msg.get("data"))
+        except WebSocketDisconnect:
+            logging.info(f"Client disconnected.")
+            break
+        except Exception as e:
+            logging.info(f"Client connection has Exception. {e}")
+            break
 
 
 async def client_reader(websocket: WebSocket, redis: Redis, db: AsyncSession, uid: str):
     while True:
-        msg = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
-        sock_msg = SocketMsg.model_validate_json(msg)
-        payload = sock_msg.payload
+        try:
+            msg = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
+            sock_msg = SocketMsg.model_validate_json(msg)
+            payload = sock_msg.payload
 
-        match sock_msg.type:
-            case "PING":
-                await websocket.send_json(
-                    SocketMsg(type="PONG", payload=None).model_dump_json()
-                )
-            case "CHAT":
-                if not isinstance(payload, ChatItem):
-                    logging.info("Websocket: Wrong payload")
+            match sock_msg.type:
+                case "PING":
+                    await websocket.send_json(
+                        SocketMsg(type="PONG", payload=None).model_dump_json()
+                    )
+                case "CHAT":
+                    if not isinstance(payload, ChatItem):
+                        logging.info("Websocket: Wrong payload")
+                        continue
+                    cid = payload.cid
+                    message = payload.message
+                    date = datetime.now(timezone.utc)
+
+                    await add_message(db, redis, cid, uid, message, date)
+                case _:
                     continue
-                cid = payload.cid
-                message = payload.message
-                date = datetime.now(timezone.utc)
-
-                await add_message(db, redis, cid, uid, message, date)
-            case _:
-                continue
+        except WebSocketDisconnect:
+            logging.info(f"Client disconnected.")
+            break
+        except Exception as e:
+            logging.info(f"Client connection has Exception. {e}")
+            break
 
 
 async def periodic_commit(db: AsyncSession, interval_seconds: int):
@@ -157,4 +171,4 @@ async def periodic_commit(db: AsyncSession, interval_seconds: int):
             logging.info("Periodic commit successful.")
         except Exception as e:
             logging.error(f"Periodic commit failed: {e}")
-            raise Exception
+            break

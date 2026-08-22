@@ -151,6 +151,7 @@ class ChatParticipant(Base):
     uid: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.uid", ondelete="CASCADE"), primary_key=True
     )
+    last_read: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class ChatMessage(Base):

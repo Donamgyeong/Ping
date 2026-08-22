@@ -19,6 +19,7 @@ from service.feed_service import (
     get_sigungu_list,
     get_emd_list,
     get_region_centroid,
+    get_feeds_list,
 )
 from service.auth_service import validate_token
 from service.user_service import is_followed, get_following, get_profile_by_uid
@@ -277,6 +278,34 @@ async def get_feed(
         raise e
     except Exception as e:
         logging.error(f"Error getting feed {fid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error",
+        )
+
+
+@router.get("/hot")
+async def get_hot_feed(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    redis: Redis = Depends(get_redis),
+    db: AsyncSession = Depends(get_db),
+) -> ResponseFeedID:
+    user = await validate_token(token, db)
+    try:
+        ids = await redis.zrevrange("feed:view", 0, 49, False)
+        feeds = await get_feeds_list(db, list[str](ids))
+
+        return ResponseFeedID(
+            result="success",
+            feedid=[
+                FeedID(fid=feed.feed_id, uid=feed.uid, post_date=feed.post_date)
+                for feed in feeds
+            ],
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting hot feed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",

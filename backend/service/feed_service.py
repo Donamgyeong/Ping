@@ -163,8 +163,11 @@ async def get_feeds_count_by_codes(
             ),
             func.count(Feed.feed_id).label("feed_count"),
         )
-        .where(
+        .join(
+            Feed,
             ST_Contains(EMD_Boundaries.geom, Feed.location),
+        )
+        .where(
             code_expr.in_(query_list),
         )
         .group_by(code_expr)

@@ -119,3 +119,18 @@ async def find_from_minio(bucket: str, object_name: str) -> bool:
             return False
 
     return await asyncio.to_thread(_find)
+
+
+async def get_file_list_from_minio(bucket: str) -> list[str]:
+    def _get():
+        result = list[str]()
+        try:
+            objects = client.list_objects(bucket_name=bucket)
+            for o in objects:
+                if o.object_name:
+                    result.append(o.object_name)
+            return result
+        except S3Error:
+            return result
+
+    return await asyncio.to_thread(_get)
