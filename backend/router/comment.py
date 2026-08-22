@@ -3,7 +3,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
+from redis.asyncio import Redis
 
+from library.redis import get_redis
 from library.db import get_db
 from library.model import (
     CommentCreate,
@@ -27,11 +29,12 @@ async def add_comment_endpoint(
     comment_data: CommentCreate,
     token: Annotated[str, Depends(oauth2_scheme)],
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ) -> ResponseID:
     user = await validate_token(token, db)
     try:
         comment_id = await create_comment(
-            db, user.uid, comment_data.feed_id, comment_data.content
+            db, redis, user.uid, comment_data.feed_id, comment_data.content
         )
         await db.commit()
         return ResponseID(result="success", id=comment_id)

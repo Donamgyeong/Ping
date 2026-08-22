@@ -4,15 +4,18 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 from library.schema import Comment, Profile, Feed
-from library.model import CommentItem
+from library.model import CommentItem, Noti
+from service.notification_service import publish_notification
+from redis.asyncio import Redis
 
 
 async def create_comment(
-    db: AsyncSession, writer_uid: str, feed_id: str, content: str
+    db: AsyncSession, redis: Redis, writer_uid: str, feed_id: str, content: str
 ) -> str:
     feed_stmt = select(Feed).where(Feed.feed_id == feed_id)
     feed_res = await db.execute(feed_stmt)
-    if not feed_res.scalar_one_or_none():
+    feed = feed_res.scalar_one_or_none()
+    if not feed:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Feed not found.",
@@ -27,12 +30,21 @@ async def create_comment(
         comment_date=datetime.now(timezone.utc),
     )
     db.add(new_comment)
+
+    if feed.uid != writer_uid:
+        noti = Noti(
+            noti_id="placeholder",
+            type="COMMENT",
+            receiver=feed.uid,
+            content=f"New comment on your post",
+            link=f"/feed/{feed.feed_id}",
+            date=datetime.now(),
+        )
+        await publish_notification(db, redis, noti)
     return comment_id
 
 
-async def get_comments_by_feed(
-    db: AsyncSession, feed_id: str
-) -> list[CommentItem]:
+async def get_comments_by_feed(db: AsyncSession, feed_id: str) -> list[CommentItem]:
     stmt = (
         select(Comment, Profile.nickname)
         .outerjoin(Profile, Comment.writer == Profile.uid)
