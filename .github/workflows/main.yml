@@ -29,7 +29,9 @@ jobs:
         with:
           context: ./frontend
           file: ./frontend/production.Dockerfile
-          tag: ping-frontend:latest
+          tag: |
+            ping-frontend:latest
+            ping-frontend:${{ github.sha }}
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -38,7 +40,9 @@ jobs:
         with:
           context: ./backend
           file: ./backend/production.Dockerfile
-          tag: ping-backend:latest
+          tag: |
+            ping-backend:latest
+            ping-backend:${{ github.sha }}
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
