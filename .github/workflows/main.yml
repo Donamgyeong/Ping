@@ -61,7 +61,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "docker-compose.yml"
+          source: "docker-compose.override.yml"
           target: ${{ env.DEPLOY_DIR }}
 
       # EC2 원격 실행
@@ -76,14 +76,14 @@ jobs:
             cd ${{ env.DEPLOY_DIR }}
 
             # (선택) .env 파일이 필요한 경우 생성
-            # echo "${{ secrets.ENV_VARS }}" > .env
+            echo "${{ secrets.ENV_VARS }}" > .env
 
             # Docker Hub 로그인 (Private Repo인 경우 필수)
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
             # 최신 이미지 Pull 및 재실행
-            docker compose -f docker-compose.overrid.yml pull
-            docker compose -f docker-compose.overrid.yml up -d --remove-orphans
+            docker compose -f docker-compose.override.yml pull
+            docker compose -f docker-compose.override.yml up -d --remove-orphans
 
             # 사용하지 않는 이전 이미지 정리
             docker image prune -f
