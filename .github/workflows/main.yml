@@ -2,7 +2,7 @@ name: Build and Deploy to EC2 via Docker Hub
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 env:
   DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/my-app-backend
@@ -24,15 +24,20 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build and push frontend Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
+          file: ./frontend/production.Dockerfile
           push: true
-          tags: |
-            ${{ env.DOCKER_IMAGE }}:latest
-            ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build and push backend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./backend/production.Dockerfile
+          push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -50,7 +55,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "docker-compose.yml"
+          source: "docker-compose.overrid.yml"
           target: ${{ env.DEPLOY_DIR }}
 
       # EC2 원격 실행
@@ -71,8 +76,8 @@ jobs:
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
             # 최신 이미지 Pull 및 재실행
-            docker compose pull
-            docker compose up -d --remove-orphans
+            docker compose -f docker-compose.overrid.yml pull
+            docker compose -f docker-compose.overrid.yml up -d --remove-orphans
 
             # 사용하지 않는 이전 이미지 정리
             docker image prune -f

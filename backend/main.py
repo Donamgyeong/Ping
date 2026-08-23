@@ -14,7 +14,7 @@ from library.db import get_db
 from library.redis import get_redis
 from library.model import SocketMsg, ChatItem, Noti
 from service.auth_service import validate_token
-from service.chat_service import add_message
+from service.chat_service import add_message, update_last_read
 
 from redis.asyncio import Redis
 from redis.asyncio.client import PubSub

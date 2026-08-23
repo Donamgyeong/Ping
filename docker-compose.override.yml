@@ -1,0 +1,139 @@
+services:
+  proxy:
+    image: nginx:1.31.3-alpine
+    container_name: ping-proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "8002:8002"
+      - "443:443"
+    volumes:
+      - ./proxy/nginx.production.conf:/etc/nginx/nginx.conf
+      - ./proxy/private-key.pem:/etc/nginx/ssl/private-key.pem
+      - ./proxy/private.pem:/etc/nginx/ssl/private.pem
+    depends_on:
+      - frontend
+      - backend_0
+      - backend_1
+    networks:
+      - ping_network
+
+  db:
+    image: kartoza/postgis
+    container_name: ping-db
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ping_db
+      POSTGRES_USER: ${DB_USER}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql
+      - ./db_schema.sql:/docker-entrypoint-initdb.d/db_schema.sql
+    networks:
+      - ping_network
+
+  redis:
+    image: redis:7.0
+    container_name: ping-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - ping_network
+    volumes:
+      - redis_data:/data
+    command: redis-server --requirepass ${REDIS_PASS}
+
+  backend_0:
+    image: dnk3500/ping_backend:latest
+    build: ./backend/production.Dockerfile
+    container_name: ping-backend-0
+    restart: always
+    environment:
+      DB_HOST: ping-db
+      DB_HOST_TEST: ping-db-test
+      DB_PORT: 5432
+      DB_NAME: ping_db
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: ping-redis
+      REDIS_PASS: ${REDIS_PASS}
+      REDIS_PORT: 6379
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_CACHE_BUCKET: ${S3_CACHE_BUCKET}
+      S3_GEO_BUCKET: ${S3_GEO_BUCKET}
+      EXTERNAL_HOST: ${EXTERNAL_HOST}
+      SECRET_KEY: ${SECRET_KEY}
+      EXPIRE_TIME: ${EXPIRE_TIME}
+    depends_on:
+      - db
+      - redis
+    networks:
+      - ping_network
+    volumes:
+      - ./backend:/app
+
+  backend_1:
+    image: dnk3500/ping_backend:latest
+    build: ./backend/production.Dockerfile
+    container_name: ping-backend-1
+    restart: always
+    environment:
+      DB_HOST: ping-db
+      DB_HOST_TEST: ping-db-test
+      DB_PORT: 5432
+      DB_NAME: ping_db
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: ping-redis
+      REDIS_PASS: ${REDIS_PASS}
+      REDIS_PORT: 6379
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_CACHE_BUCKET: ${S3_CACHE_BUCKET}
+      S3_GEO_BUCKET: ${S3_GEO_BUCKET}
+      EXTERNAL_HOST: ${EXTERNAL_HOST}
+      SECRET_KEY: ${SECRET_KEY}
+      EXPIRE_TIME: ${EXPIRE_TIME}
+    depends_on:
+      - db
+      - redis
+    networks:
+      - ping_network
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    image: dnk3500/ping_frontend:latest
+    build: ./frontend/production.Dockerfile
+    container_name: ping-frontend
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: ${URL}
+      EXTERNAL_HOST: ${EXTERNAL_HOST}
+    depends_on:
+      - backend_0
+      - backend_1
+    networks:
+      - ping_network
+    command: yarn start
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+
+volumes:
+  db_data:
+  db_data_test:
+  redis_data:
+
+networks:
+  ping_network:
+    driver: bridge

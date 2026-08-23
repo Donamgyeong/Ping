@@ -210,3 +210,27 @@ async def get_chat_history(
     if messages:
         return messages
     return []
+
+
+async def update_last_read(
+    db: AsyncSession,
+    redis: Redis,
+    cid: str,
+    uid: str,
+    last_read: int,
+):
+    stmt = (
+        update(ChatParticipant)
+        .where(ChatParticipant.cid == cid, ChatParticipant.uid == uid)
+        .values(last_read=last_read)
+    )
+
+    await db.execute(stmt)
+
+    participants = await get_chatroom_participant(db, cid)
+    msg = SocketMsg(
+        type="CHAT_READ", payload=LastReadItem(cid=cid, last_read=last_read)
+    )
+    for p in participants:
+        if p != uid:
+            await redis.publish(f"user:{p}", msg.model_dump_json())

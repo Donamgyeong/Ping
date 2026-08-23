@@ -25,6 +25,7 @@ from service.chat_service import (
     get_chatrooms_by_user,
     get_chatroom_info,
     get_chat_history,
+    update_last_read,
 )
 from library.db import get_db
 from library.redis import get_redis
@@ -201,34 +202,13 @@ async def get_chat(
             uid=user.uid,
             last_idx=last_idx,
         )
+        if len(messages) != 0:
+            await update_last_read(db, redis, cid, user.uid, messages[-1].idx)
         return ResponseChat(result="success", chat=messages)
     except HTTPException as e:
         raise e
     except Exception as e:
         logging.error(f"Error getting chat history for cid {cid}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal Server Error",
-        )
-
-
-@router.post("/{cid}/{last_id}/read")
-async def update_chat_read(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    cid: str,
-    last_idx: int,
-    redis: Redis = Depends(get_redis),
-    db: AsyncSession = Depends(get_db),
-) -> ResponseBase:
-    user = await validate_token(token, db)
-    try:
-        await db.commit()
-        return ResponseBase(result="success")
-    except HTTPException as e:
-        await db.rollback()
-        raise e
-    except Exception as e:
-        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",

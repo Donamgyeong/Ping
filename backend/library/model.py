@@ -231,6 +231,11 @@ class ResponseFileURL(ResponseBase):
     valid_until: datetime
 
 
+class LastReadItem(BaseModel):
+    cid: str
+    last_read: int
+
+
 class SocketMsg(BaseModel):
-    type: str | Literal["CHAT", "NOTI", "PONG", "PING", "AUTH"]
-    payload: ChatItem | Noti | str | None
+    type: str | Literal["CHAT", "NOTI", "PONG", "PING", "AUTH", "CHAT_READ"]
+    payload: ChatItem | Noti | str | LastReadItem | None
