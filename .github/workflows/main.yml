@@ -82,8 +82,8 @@ jobs:
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
             # 최신 이미지 Pull 및 재실행
-            docker compose -f docker-compose.override.yml pull
-            docker compose -f docker-compose.override.yml up -d --remove-orphans
+            sudo docker compose -f docker-compose.override.yml pull
+            sudo docker compose -f docker-compose.override.yml up -d --remove-orphans
 
             # 사용하지 않는 이전 이미지 정리
             docker image prune -f
