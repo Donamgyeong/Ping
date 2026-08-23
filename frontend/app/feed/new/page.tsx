@@ -143,6 +143,10 @@ export default function NewFeedPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!token) {
+      setError("Please login to create a post.");
+      return;
+    }
     if (!content.trim() || !location) {
       setError(
         "Content and location are required. Please select a location on the map."
