@@ -29,20 +29,21 @@ jobs:
         with:
           context: ./frontend
           file: ./frontend/production.Dockerfile
-          tag: |
-            ping-frontend:latest
-            ping-frontend:${{ github.sha }}
+          tags: |
+            dnk3500/ping_frontend:latest
+            dnk3500/ping_frontend:${{ github.sha }}
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
       - name: Build and push backend Docker image
         uses: docker/build-push-action@v7
         with:
           context: ./backend
           file: ./backend/production.Dockerfile
-          tag: |
-            ping-backend:latest
-            ping-backend:${{ github.sha }}
+          tags: |
+            dnk3500/ping_backend:latest
+            dnk3500/ping_backend:${{ github.sha }}
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
