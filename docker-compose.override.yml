@@ -48,7 +48,9 @@ services:
 
   backend_0:
     image: dnk3500/ping_backend:latest
-    build: ./backend/production.Dockerfile
+    build:
+      context: ./backend
+      dockerfile: production.Dockerfile
     container_name: ping-backend-0
     restart: always
     environment:
@@ -75,12 +77,12 @@ services:
       - redis
     networks:
       - ping_network
-    volumes:
-      - ./backend:/app
 
   backend_1:
     image: dnk3500/ping_backend:latest
-    build: ./backend/production.Dockerfile
+    build:
+      context: ./backend
+      dockerfile: production.Dockerfile
     container_name: ping-backend-1
     restart: always
     environment:
@@ -107,27 +109,21 @@ services:
       - redis
     networks:
       - ping_network
-    volumes:
-      - ./backend:/app
 
   frontend:
     image: dnk3500/ping_frontend:latest
-    build: ./frontend/production.Dockerfile
+    build:
+      context: ./frontend
+      dockerfile: production.Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${URL}
     container_name: ping-frontend
     restart: always
-    environment:
-      NEXT_PUBLIC_API_URL: ${URL}
-      EXTERNAL_HOST: ${EXTERNAL_HOST}
     depends_on:
       - backend_0
       - backend_1
     networks:
       - ping_network
-    command: yarn start
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
 
 volumes:
   db_data:
