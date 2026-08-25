@@ -10,7 +10,7 @@ if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
       -out "$CERT_DIR/fullchain.pem" \
       -subj "/CN=localhost"
 
-    docker compose up -d nginx
+    docker compose -f docker-compose.production.yml up -d proxy
 
     rm -rf "$CERT_DIR"
     sudo docker compose run --rm certbot certonly --webroot \
@@ -20,10 +20,10 @@ if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
       --no-eff-email \
       -d $DOMAIN
 
-    sudo docker compose exec nginx nginx -s reload
+    sudo docker compose -f docker-compose.production.yml exec proxy nginx -s reload 
 else
     echo "기존 SSL 인증서가 확인되었습니다. 인증서 초기화를 건너뜁니다."
 fi
 
-sudo docker compose up -d --remove-orphans
+sudo docker compose -f docker-compose.production.yml up -d --remove-orphans
 sudo docker image prune -f
