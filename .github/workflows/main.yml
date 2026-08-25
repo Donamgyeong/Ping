@@ -33,7 +33,7 @@ jobs:
             dnk3500/ping_frontend:${{ github.sha }}
           push: true
           cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+          cache-to: type=gha,mode=min,scope=frontend
 
   build-backend:
     runs-on: ubuntu-latest
