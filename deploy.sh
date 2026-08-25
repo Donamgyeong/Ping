@@ -13,7 +13,7 @@ if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
     docker compose -f docker-compose.override.yml up -d proxy
 
     rm -rf "$CERT_DIR"
-    sudo docker compose run --rm certbot certonly --webroot \
+    sudo docker compose -f docker-compose.override.yml run --rm certbot certonly --webroot \
       --webroot-path=/var/www/certbot \
       --email $EMAIL \
       --agree-tos \
