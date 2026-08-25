@@ -9,14 +9,28 @@ services:
       - "443:443"
     volumes:
       - ./proxy/nginx.production.conf:/etc/nginx/nginx.conf
-      - ./proxy/private-key.pem:/etc/nginx/ssl/private-key.pem
-      - ./proxy/private.pem:/etc/nginx/ssl/private.pem
+      - ./data/certbot/conf:/etc/letsencrypt
+      - ./data/certbot/www:/var/www/certbot
     depends_on:
       - frontend
       - backend_0
       - backend_1
     networks:
       - ping_network
+    command: '/bin/sh -c ''while :; do sleep 6h & wait $${!}; nginx -s reload; done & NGINX_ENTRYPOINT_QUIET_LOGS=1 exec nginx -g "daemon off;"'''
+
+  certbot:
+    image: certbot/certbot
+    container_name: ping-certbot
+    restart: always
+    volumes:
+      - ./data/certbot/conf:/etc/letsencrypt
+      - ./data/certbot/www:/var/www/certbot
+    depends_on:
+      - proxy
+    networks:
+      - ping_network
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
 
   db:
     image: kartoza/postgis
@@ -26,8 +40,6 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ping_db
       POSTGRES_USER: ${DB_USER}
-    ports:
-      - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql
       - ./db_schema.sql:/docker-entrypoint-initdb.d/db_schema.sql
@@ -38,8 +50,6 @@ services:
     image: redis:7.0
     container_name: ping-redis
     restart: always
-    ports:
-      - "6379:6379"
     networks:
       - ping_network
     volumes:
@@ -129,6 +139,8 @@ volumes:
   db_data:
   db_data_test:
   redis_data:
+  certbot_conf:
+  certbot_www:
 
 networks:
   ping_network:
