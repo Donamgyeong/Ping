@@ -10,7 +10,7 @@ if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
       -out "$CERT_DIR/fullchain.pem" \
       -subj "/CN=localhost"
 
-    docker compose -f docker-compose.override.yml up -d proxy
+    sudo docker compose -f docker-compose.override.yml up -d proxy
 
     rm -rf "$CERT_DIR"
     sudo docker compose -f docker-compose.override.yml run --rm certbot certonly --webroot \
