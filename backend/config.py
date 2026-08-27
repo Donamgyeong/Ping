@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     db_host_test: str = Field(..., validation_alias="DB_HOST_TEST")
     db_port: str = Field(..., validation_alias="DB_PORT")
     s3_endpoint: str = Field(..., validation_alias="S3_ENDPOINT")
+    s3_region: str = Field(..., validation_alias="S3_REGION")
     s3_access_key: str = Field(..., validation_alias="S3_ACCESS_KEY")
     s3_secret_key: str = Field(..., validation_alias="S3_SECRET_KEY")
     s3_bucket: str = Field(..., validation_alias="S3_BUCKET")

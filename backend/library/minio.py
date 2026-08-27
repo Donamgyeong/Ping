@@ -7,9 +7,10 @@ import asyncio
 
 client = Minio(
     endpoint=settings.s3_endpoint,
+    region=settings.s3_region,
     access_key=settings.s3_access_key,
     secret_key=settings.s3_secret_key,
-    secure=False,
+    secure=True,
 )
 
 
