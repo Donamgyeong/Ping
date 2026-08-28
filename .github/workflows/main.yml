@@ -93,4 +93,4 @@ jobs:
             export EMAIL=${{ secrets.EMAIL }}
 
             chmod +x deploy.sh
-            ./deploy.sh
+            sudo ./deploy.sh
