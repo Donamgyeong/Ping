@@ -8,7 +8,7 @@ CERT_DIR="./data/certbot/conf/live/$DOMAIN"
 
 # Compose 파일 플래그 (기본 compose와 override 함께 병합)
 # 만약 기본 docker-compose.yml만 쓴다면 COMPOSE_CMD="sudo docker compose"로 변경
-COMPOSE_CMD="sudo docker compose -f docker-compose.override.yml"
+COMPOSE_CMD="sudo docker compose -f docker-compose.override.yml --env-file ./.env"
 
 if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
     echo "▶ [최초 배포 감지] SSL 인증서 초기화 작업을 시작합니다."
