@@ -23,6 +23,8 @@ if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
 
     sleep 30
 
+    rm -rf $CERT_DIR
+
     $COMPOSE_CMD run --rm --entrypoint "certbot" certbot certonly --webroot \
       --webroot-path=/var/www/certbot \
       --email "$EMAIL" \
