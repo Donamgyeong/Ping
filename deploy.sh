@@ -19,7 +19,7 @@ if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
       -out "$CERT_DIR/fullchain.pem" \
       -subj "/CN=localhost"
 
-    $COMPOSE_CMD up -d proxy
+    $COMPOSE_CMD up -d --remove-orphans
 
     rm -rf "$CERT_DIR"
 
@@ -36,5 +36,4 @@ else
 fi
 
 # 전체 서비스 기동
-$COMPOSE_CMD up -d --remove-orphans
 sudo docker image prune -f
