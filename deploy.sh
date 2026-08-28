@@ -4,10 +4,7 @@ set -e
 # 스크립트 실행 위치를 파일이 있는 디렉터리로 고정
 cd "$(dirname "$0")"
 
-CERT_DIR="./data/certbot/conf/live/$DOMAIN"
-
-# Compose 파일 플래그 (기본 compose와 override 함께 병합)
-# 만약 기본 docker-compose.yml만 쓴다면 COMPOSE_CMD="sudo docker compose"로 변경
+CERT_DIR="/home/ubuntu/app/data/certbot/conf/live/$DOMAIN"
 COMPOSE_CMD="sudo docker compose -f docker-compose.override.yml --env-file ./.env"
 
 if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
