@@ -1,15 +1,16 @@
 #!/bin/bash
 set -e
 
-# 스크립트 실행 위치를 파일이 있는 디렉터리로 고정
 cd "$(dirname "$0")"
 
 CERT_DIR="./data/certbot/conf/live/$DOMAIN"
 COMPOSE_CMD="sudo docker compose -f docker-compose.override.yml --env-file ./.env"
 
+echo "인증서 확인 경로: $CERT_DIR/fullchain.pem"
+
 $COMPOSE_CMD pull
 
-if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
+if [ -f "$CERT_DIR/fullchain.pem" ] || [ -L "$CERT_DIR/fullchain.pem" ]; then
     echo "▶ [최초 배포 감지] SSL 인증서 초기화 작업을 시작합니다."
 
     mkdir -p "$CERT_DIR"
@@ -22,7 +23,7 @@ if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
 
     sleep 30
 
-    rm -rf $CERT_DIR
+    rm -rf "$CERT_DIR"
 
     $COMPOSE_CMD run --rm --entrypoint "certbot" certbot certonly --webroot \
       --webroot-path=/var/www/certbot \
@@ -33,8 +34,9 @@ if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
 
     $COMPOSE_CMD exec proxy nginx -s reload
 else
+    $COMPOSE_CMD up -d --remove-orphans
     echo "기존 SSL 인증서가 확인되었습니다. 인증서 초기화를 건너뜁니다."
 fi
 
-# 전체 서비스 기동
+# 전체 서비스 기동 후 불필요한 이미지 정리
 sudo docker image prune -f
