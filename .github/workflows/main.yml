@@ -32,7 +32,7 @@ jobs:
             dnk3500/ping_frontend:latest
             dnk3500/ping_frontend:${{ github.sha }}
           build-args: |
-            API_URL=${{ secrets.API_URL }}
+            NEXT_PUBLIC_API_URL=${{ secrets.API_URL }}
           push: true
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=min,scope=frontend
@@ -95,4 +95,4 @@ jobs:
             export EMAIL=${{ secrets.EMAIL }}
 
             chmod +x deploy.sh
-            sudo ./deploy.sh
+            ./deploy.sh
