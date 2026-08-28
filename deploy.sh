@@ -4,8 +4,10 @@ set -e
 # 스크립트 실행 위치를 파일이 있는 디렉터리로 고정
 cd "$(dirname "$0")"
 
-CERT_DIR="/home/ubuntu/app/data/certbot/conf/live/$DOMAIN"
+CERT_DIR="./data/certbot/conf/live/$DOMAIN"
 COMPOSE_CMD="sudo docker compose -f docker-compose.override.yml --env-file ./.env"
+
+$COMPOSE_CMD pull
 
 if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
     echo "▶ [최초 배포 감지] SSL 인증서 초기화 작업을 시작합니다."
