@@ -131,6 +131,8 @@ services:
         - NEXT_PUBLIC_API_URL=${URL}
     container_name: ping-frontend
     restart: always
+    environment:
+      - NEXT_PUBLIC_API_URL=${URL}
     depends_on:
       - backend_0
       - backend_1
