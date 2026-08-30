@@ -1,26 +1,26 @@
-from minio import Minio, S3Error
-from minio.datatypes import Object
+import boto3
+from boto3.exceptions import Boto3Error
 from config import settings
 from typing import BinaryIO
 from datetime import timedelta, datetime
 import asyncio
 
-client = Minio(
-    endpoint=settings.s3_endpoint,
-    region=settings.s3_region,
-    access_key=settings.s3_access_key,
-    secret_key=settings.s3_secret_key,
-    secure=True,
+client = boto3.client(
+    "s3",
+    aws_access_key_id=settings.s3_access_key,
+    aws_secret_access_key=settings.s3_secret_key,
+    region_name=settings.s3_region,
 )
 
 
 async def minio_init():
-    if not client.bucket_exists(settings.s3_bucket):
-        client.make_bucket(settings.s3_bucket, location=settings.s3_region)
-    if not client.bucket_exists(settings.s3_cache_bucket):
-        client.make_bucket(settings.s3_cache_bucket, location=settings.s3_region)
-    if not client.bucket_exists(settings.s3_geo_bucket):
-        client.make_bucket(settings.s3_geo_bucket, location=settings.s3_region)
+    buckets = client.list_buckets()
+    if not settings.s3_bucket in buckets:
+        client.create_bucket(Bucket=settings.s3_bucket, ACL="public-read-write")
+    if not settings.s3_cache_bucket in buckets:
+        client.create_bucket(Bucket=settings.s3_cache_bucket, ACL="public-read-write")
+    if not settings.s3_geo_bucket in buckets:
+        client.create_bucket(Bucket=settings.s3_geo_bucket, ACL="public-read-write")
 
 
 async def upload_to_minio(
@@ -32,11 +32,12 @@ async def upload_to_minio(
 ):
     def _upload():
         client.put_object(
-            bucket_name=bucket,
-            object_name=object_name,
-            data=file_stream,
-            length=file_length,
-            content_type=content_type,
+            Bucket=bucket,
+            Key=object_name,
+            ACL="public-read",
+            Body=file_stream,
+            ContentLength=file_length,
+            ContentType=content_type,
         )
 
     await asyncio.to_thread(_upload)
@@ -44,17 +45,14 @@ async def upload_to_minio(
 
 async def delete_from_minio(bucket: str, object_name: str):
     def _delete():
-        client.remove_object(
-            bucket_name=bucket,
-            object_name=object_name,
-        )
+        client.delete_object(Bucket=bucket, Key=object_name)
 
     await asyncio.to_thread(_delete)
 
 
 async def get_from_minio(bucket: str, object_name: str):
     def _get():
-        response = client.get_object(bucket_name=bucket, object_name=object_name)
+        response = client.get_object(Bucket=bucket, Key=object_name)
         return response
 
     return await asyncio.to_thread(_get)
@@ -65,13 +63,11 @@ async def get_upload_url_from_minio(
 ) -> tuple[str, datetime]:
     def _get():
         return (
-            client.presigned_put_object(
-                bucket_name=bucket,
-                object_name=object_name,
-                expires=timedelta(seconds=settings.file_url_expire_time),
-            ).replace(
-                f"http://{settings.s3_endpoint}",
-                f"https://{settings.external_host}:9000",
+            client.generate_presigned_url(
+                ClientMethod="put_object",
+                Params={"Bucket": bucket, "Key": object_name},
+                ExpiresIn=settings.file_url_expire_time,
+                HttpMethod="PUT",
             ),
             datetime.now() + timedelta(seconds=settings.file_url_expire_time),
         )
@@ -84,13 +80,11 @@ async def get_download_url_from_minio(
 ) -> tuple[str, datetime]:
     def _get():
         return (
-            client.presigned_get_object(
-                bucket_name=bucket,
-                object_name=object_name,
-                expires=timedelta(seconds=settings.file_url_expire_time),
-            ).replace(
-                f"http://{settings.s3_endpoint}",
-                f"https://{settings.external_host}:9000",
+            client.generate_presigned_url(
+                ClientMethod="get_object",
+                Params={"Bucket": bucket, "Key": object_name},
+                ExpiresIn=settings.file_url_expire_time,
+                HttpMethod="GET",
             ),
             datetime.now() + timedelta(seconds=settings.file_url_expire_time),
         )
@@ -101,7 +95,7 @@ async def get_download_url_from_minio(
 async def get_file_info(bucket: str, object_name: str) -> tuple[str, int] | None:
     def _info():
         try:
-            object = client.stat_object(bucket, object_name)
+            object = client.get_object
             if not object.content_type or not object.size:
                 return None
             return object.content_type, object.size
@@ -116,7 +110,7 @@ async def find_from_minio(bucket: str, object_name: str) -> bool:
         try:
             client.stat_object(bucket, object_name)
             return True
-        except S3Error:
+        except Exception:
             return False
 
     return await asyncio.to_thread(_find)
@@ -126,12 +120,12 @@ async def get_file_list_from_minio(bucket: str) -> list[str]:
     def _get():
         result = list[str]()
         try:
-            objects = client.list_objects(bucket_name=bucket)
+            objects = client.list_objects(Bucket=bucket)
             for o in objects:
                 if o.object_name:
                     result.append(o.object_name)
             return result
-        except S3Error:
+        except Exception:
             return result
 
     return await asyncio.to_thread(_get)

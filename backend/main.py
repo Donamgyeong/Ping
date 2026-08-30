@@ -37,7 +37,7 @@ from config import settings
 async def lifespan(app: FastAPI):
     from library.minio import minio_init
 
-    await minio_init()
+    # await minio_init()
 
     yield
 
