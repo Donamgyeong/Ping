@@ -1,5 +1,5 @@
 import boto3
-from boto3.exceptions import Boto3Error
+from botocore.config import Config
 from config import settings
 from typing import BinaryIO
 from datetime import timedelta, datetime
@@ -10,6 +10,10 @@ client = boto3.client(
     aws_access_key_id=settings.s3_access_key,
     aws_secret_access_key=settings.s3_secret_key,
     region_name=settings.s3_region,
+    config=Config(
+        signature_version="s3v4",
+        s3={"addressing_style": "virtual"},
+    ),
 )
 
 
@@ -34,7 +38,6 @@ async def upload_to_minio(
         client.put_object(
             Bucket=bucket,
             Key=object_name,
-            ACL="public-read",
             Body=file_stream,
             ContentLength=file_length,
             ContentType=content_type,
@@ -53,7 +56,7 @@ async def delete_from_minio(bucket: str, object_name: str):
 async def get_from_minio(bucket: str, object_name: str):
     def _get():
         response = client.get_object(Bucket=bucket, Key=object_name)
-        return response
+        return response.get("Body")
 
     return await asyncio.to_thread(_get)
 
@@ -95,11 +98,11 @@ async def get_download_url_from_minio(
 async def get_file_info(bucket: str, object_name: str) -> tuple[str, int] | None:
     def _info():
         try:
-            object = client.get_object
-            if not object.content_type or not object.size:
+            res = client.head_object(Bucket=bucket, Key=object_name)
+            if not res:
                 return None
-            return object.content_type, object.size
-        except S3Error:
+            return res.get("ContentType"), res.get("ContentLength")
+        except Exception:
             return None
 
     return await asyncio.to_thread(_info)

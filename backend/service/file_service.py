@@ -23,15 +23,15 @@ async def new_file(
 ):
     pending = await redis.get(f"file:upload:{fid}")
     if not pending:
-        raise Exception
+        raise Exception("No specified pending requests")
     file_entry = json.loads(pending)
 
     if file_entry["uid"] != uid:
-        raise Exception
+        raise Exception("Request user id mismatch")
 
     info = await get_file_info(settings.s3_bucket, fid)
     if not info:
-        raise Exception
+        raise Exception("File info retrieve failed")
 
     await redis.delete(f"file:upload:{fid}")
 
@@ -86,7 +86,7 @@ async def make_thumbnail(image_name: str):
         max_size=10 * 1024 * 1024
     ) as orig_file, SpooledTemporaryFile(max_size=10 * 1024 * 1024) as thumb_file:
 
-        for chunk in original_stream.stream(32 * 1024):
+        for chunk in original_stream.iter_chunks(32 * 1024):
             orig_file.write(chunk)
         orig_file.seek(0)
 

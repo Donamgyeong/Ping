@@ -71,6 +71,7 @@ async def complete_pending_upload(
         return ResponseBase(result="success")
     except Exception as e:
         await db.rollback()
+        logging.error(f"finalizing upload failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
