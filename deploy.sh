@@ -4,11 +4,14 @@ set -e
 cd "$(dirname "$0")"
 
 CERT_DIR="./data/certbot/conf/live/$DOMAIN"
+
 COMPOSE_CMD="sudo docker compose -f docker-compose.override.yml --env-file ./.env"
 
-echo "인증서 확인 경로: $CERT_DIR/fullchain.pem"
+# echo "인증서 확인 경로: $CERT_DIR/fullchain.pem"
 
 $COMPOSE_CMD pull
+
+curl -o global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 
 # if [ -f "$CERT_DIR/fullchain.pem" ] || [ -L "$CERT_DIR/fullchain.pem" ]; then
 #     echo "▶ [최초 배포 감지] SSL 인증서 초기화 작업을 시작합니다."

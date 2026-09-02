@@ -27,6 +27,7 @@ fastapi-restful==0.6.0
 fastar==0.11.0
 GeoAlchemy2==0.20.0
 geohash2==1.1
+geopandas==1.1.4
 greenlet==3.5.3
 h11==0.16.0
 httpcore==1.0.9
@@ -47,6 +48,7 @@ minio==7.2.20
 mypy_extensions==1.1.0
 numpy==2.2.6
 packaging==26.2
+pandas==2.3.3
 pillow==12.3.0
 pluggy==1.6.0
 psutil==5.9.8
@@ -61,12 +63,15 @@ pydantic-settings==2.14.2
 pydantic_core==2.46.4
 Pygments==2.20.0
 PyJWT==2.13.0
+pyogrio==0.13.0
+pyproj==3.7.1
 pyrate-limiter==4.4.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 python-multipart==0.0.32
+pytz==2026.3.post1
 PyYAML==6.0.3
 redis==8.0.1
 requests==2.34.2
@@ -89,6 +94,7 @@ typer==0.26.8
 typing-inspect==0.9.0
 typing-inspection==0.4.2
 typing_extensions==4.16.0
+tzdata==2026.3
 urllib3==2.7.0
 uvicorn==0.50.0
 uvloop==0.22.1

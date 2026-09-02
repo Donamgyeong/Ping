@@ -32,20 +32,6 @@ services:
       - ping_network
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
 
-  db:
-    image: kartoza/postgis
-    container_name: ping-db
-    restart: always
-    environment:
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ping_db
-      POSTGRES_USER: ${DB_USER}
-    volumes:
-      - db_data:/var/lib/postgresql
-      - ./db_schema.sql:/docker-entrypoint-initdb.d/db_schema.sql
-    networks:
-      - ping_network
-
   redis:
     image: redis:7.0
     container_name: ping-redis
@@ -64,10 +50,10 @@ services:
     container_name: ping-backend-0
     restart: always
     environment:
-      DB_HOST: ping-db
+      DB_HOST: ${DB_HOST}
       DB_HOST_TEST: ping-db-test
       DB_PORT: 5432
-      DB_NAME: ping_db
+      DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       REDIS_HOST: ping-redis
@@ -97,10 +83,10 @@ services:
     container_name: ping-backend-1
     restart: always
     environment:
-      DB_HOST: ping-db
+      DB_HOST: ${DB_HOST}
       DB_HOST_TEST: ping-db-test
       DB_PORT: 5432
-      DB_NAME: ping_db
+      DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       REDIS_HOST: ping-redis
