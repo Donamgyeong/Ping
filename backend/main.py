@@ -172,3 +172,9 @@ async def periodic_commit(db: AsyncSession, interval_seconds: int):
         except Exception as e:
             logging.error(f"Periodic commit failed: {e}")
             break
+
+
+@app.get("/health", status_code=status.HTTP_200_OK)
+def health_check():
+    # Optional: Add database or redis connection checks here
+    return {"status": "healthy"}
