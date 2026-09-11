@@ -1,11 +1,8 @@
-name: Build and Deploy to EC2 via Docker Hub
+name: Build and Deploy to ECS via Docker Hub
 
 on:
   push:
     branches: ["main"]
-
-env:
-  DEPLOY_DIR: /home/${{ secrets.EC2_USER }}/app
 
 jobs:
   build-frontend:
@@ -14,14 +11,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push frontend
         uses: docker/build-push-action@v5
@@ -30,12 +29,19 @@ jobs:
           file: ./frontend/production.Dockerfile
           tags: |
             dnk3500/ping_frontend:latest
-            dnk3500/ping_frontend:${{ github.sha }}
+            332778514986.dkr.ecr.ap-northeast-2.amazonaws.com/dnk3500/ping_frontend:latest
           build-args: |
             NEXT_PUBLIC_API_URL=${{ secrets.API_URL }}
           push: true
           cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=min,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Update ECS service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ secrets.ECS_CLUSTER_NAME }} \
+            --service ${{ secrets.ECS_FRONTEND_SERVICE_NAME }} \
+            --force-new-deployment
 
   build-backend:
     runs-on: ubuntu-latest
@@ -43,14 +49,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push backend
         uses: docker/build-push-action@v5
@@ -59,40 +67,14 @@ jobs:
           file: ./backend/production.Dockerfile
           tags: |
             dnk3500/ping_backend:latest
-            dnk3500/ping_backend:${{ github.sha }}
+            332778514986.dkr.ecr.ap-northeast-2.amazonaws.com/dnk3500/ping_backend:latest
           push: true
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
-  deploy:
-    needs: [build-frontend, build-backend]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code (for compose files)
-        uses: actions/checkout@v4
-
-      - name: Copy docker-compose.yml to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "docker-compose.override.yml,proxy/nginx.production.conf,deploy.sh,db_schema.sql"
-          target: ${{ env.DEPLOY_DIR }}
-
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd ${{ env.DEPLOY_DIR }}
-            echo "${{ secrets.ENV_VARS }}" > .env
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-
-            export DOMAIN=${{ secrets.DOMAIN }}
-            export EMAIL=${{ secrets.EMAIL }}
-
-            chmod +x deploy.sh
-            ./deploy.sh
+      - name: Update ECS service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ secrets.ECS_CLUSTER_NAME }} \
+            --service ${{ secrets.ECS_BACKEND_SERVICE_NAME }} \
+            --force-new-deployment

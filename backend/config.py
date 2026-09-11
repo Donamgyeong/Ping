@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     s3_secret_key: str = Field(..., validation_alias="S3_SECRET_KEY")
     s3_bucket: str = Field(..., validation_alias="S3_BUCKET")
     s3_cache_bucket: str = Field(..., validation_alias="S3_CACHE_BUCKET")
-    cloudfront_url_image: str = Field(, validation_alias="CLOUDFRONT_URL_IMAGE")
+    cloudfront_url_image: str = Field(..., validation_alias="CLOUDFRONT_URL_IMAGE")
     cloudfront_url_cache: str = Field(..., validation_alias="CLOUDFRONT_URL_CACHE")
     external_host: str = Field(..., validation_alias="EXTERNAL_HOST")
     redis_host: str = Field(..., validation_alias="REDIS_HOST")

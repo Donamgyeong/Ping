@@ -30,7 +30,8 @@ async def get_notification(
                 map(lambda x: Noti.model_validate(x), notification_list)
             ),
         )
-    except Exception:
+    except Exception as e:
+        logging.error(f"Error occurred while fetching notifications: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error",
