@@ -86,6 +86,7 @@ jobs:
           IMAGE_TAG: latest
         run: |
           cd backend
+          curl -o global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
           docker build -f production.Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"

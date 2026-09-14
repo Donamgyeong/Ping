@@ -6,7 +6,7 @@ from config import settings
 pool = redis.ConnectionPool(
     host=settings.redis_host,
     port=settings.redis_port,
-    max_connections=100,
+    max_connections=50,
     decode_responses=True,
 )
 
