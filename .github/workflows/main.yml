@@ -23,18 +23,15 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          file: ./frontend/production.Dockerfile
-          tags: |
-            dnk3500/ping_frontend:latest
-            332778514986.dkr.ecr.ap-northeast-2.amazonaws.com/dnk3500/ping_frontend:latest
-          build-args: |
-            NEXT_PUBLIC_API_URL=${{ secrets.API_URL }}
-          push: true
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+        id: build-and-push-frontend
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          ECR_REPOSITORY: dnk3500/ping_frontend
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
       - name: Update ECS service
         run: |
@@ -61,16 +58,15 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push backend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          file: ./backend/production.Dockerfile
-          tags: |
-            dnk3500/ping_backend:latest
-            332778514986.dkr.ecr.ap-northeast-2.amazonaws.com/dnk3500/ping_backend:latest
-          push: true
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
+        id: build-and-push-backend
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          ECR_REPOSITORY: dnk3500/ping_backend
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
       - name: Update ECS service
         run: |

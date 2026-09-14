@@ -1,4 +1,6 @@
 import redis.asyncio as redis
+from fastapi import HTTPException, status
+import logging
 from config import settings
 
 pool = redis.ConnectionPool(
@@ -15,4 +17,13 @@ redis_client = redis.Redis(
 
 
 async def get_redis():
-    yield redis_client
+    try:
+        yield redis_client
+    except Exception as e:
+        logging.error(f"Error occurred while getting Redis client: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Redis connection error",
+        )
+    finally:
+        await redis_client.close()
