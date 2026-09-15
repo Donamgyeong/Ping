@@ -23,8 +23,6 @@ async def minio_init():
         client.create_bucket(Bucket=settings.s3_bucket, ACL="public-read-write")
     if not settings.s3_cache_bucket in buckets:
         client.create_bucket(Bucket=settings.s3_cache_bucket, ACL="public-read-write")
-    if not settings.s3_geo_bucket in buckets:
-        client.create_bucket(Bucket=settings.s3_geo_bucket, ACL="public-read-write")
 
 
 async def upload_to_minio(
@@ -81,18 +79,28 @@ async def get_upload_url_from_minio(
 async def get_download_url_from_minio(
     bucket: str, object_name: str
 ) -> tuple[str, datetime]:
-    def _get():
+    # def _get():
+    #     return (
+    #         client.generate_presigned_url(
+    #             ClientMethod="get_object",
+    #             Params={"Bucket": bucket, "Key": object_name},
+    #             ExpiresIn=settings.file_url_expire_time,
+    #             HttpMethod="GET",
+    #         ),
+    #         datetime.now() + timedelta(seconds=settings.file_url_expire_time),
+    #     )
+
+    # return await asyncio.to_thread(_get)
+    if bucket == settings.s3_cache_bucket:
         return (
-            client.generate_presigned_url(
-                ClientMethod="get_object",
-                Params={"Bucket": bucket, "Key": object_name},
-                ExpiresIn=settings.file_url_expire_time,
-                HttpMethod="GET",
-            ),
+            f"{settings.cloudfront_url_cache}/{object_name}",
             datetime.now() + timedelta(seconds=settings.file_url_expire_time),
         )
-
-    return await asyncio.to_thread(_get)
+    else:
+        return (
+            f"{settings.cloudfront_url_image}/{object_name}",
+            datetime.now() + timedelta(seconds=settings.file_url_expire_time),
+        )
 
 
 async def get_file_info(bucket: str, object_name: str) -> tuple[str, int] | None:
